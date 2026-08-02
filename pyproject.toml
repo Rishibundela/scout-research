@@ -7,7 +7,7 @@ name = "scout-research"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "grandalf>=0.8",
     "ipython>=9.16.0",
@@ -17,12 +17,14 @@ dependencies = [
     "langgraph>=1.2.10",
     "langgraph-api>=0.11.2",
     "langgraph-cli>=0.4.31",
+    "langgraph-sdk>=0.4.2",
     "markdown>=3.10.3",
     "pillow>=12.3.0",
     "pydantic>=2.13.4",
     "pygraphviz>=2.0.1",
     "python-dotenv>=1.2.2",
     "rich>=15.0.0",
+    "streamlit>=1.60.0",
     "tavily>=1.1.0",
 ]
 
