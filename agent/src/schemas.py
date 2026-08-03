@@ -34,14 +34,16 @@ class Summary(BaseModel):
     summary: str = Field(description="Concise summary of the webpage content")
     key_excerpts: str = Field(description="Important quotes and excerpts from the content")
 
-@tool
+
 class ConductResearch(BaseModel):
     """Tool for delegating a research task to a specialized sub-agent."""
     research_topic: str = Field(
         description="The topic to research. Should be a single topic, and should be described in high detail (at least a paragraph).",
     )
 
-@tool
 class ResearchComplete(BaseModel):
     """Tool for indicating that the research process is complete."""
-    pass
+    status: str = Field(
+        default="complete", 
+        description="Must be set to 'complete' when research is finished."
+    )

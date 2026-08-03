@@ -8,11 +8,8 @@ from datetime import datetime
 # ===== UTILITY FUNCTIONS =====
 
 def get_today_str() -> str:
-    """Get current date in a human-readable format."""
-    now = datetime.now()
-    # Format the main parts, then inject the day manually as a base-10 integer
-    return now.strftime(f"%a %b {now.day}, %Y")
-
+    """Return today's date formatted as a human-readable string (e.g., 'August 03, 2026')."""
+    return datetime.now().strftime("%B %d, %Y")
 
 def extract_text_content(content) -> str:
     """
@@ -44,5 +41,3 @@ def extract_text_content(content) -> str:
         return content.get("text", str(content))
         
     return str(content)
-
-

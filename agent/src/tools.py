@@ -4,10 +4,10 @@ from agent.src.utils.search import tavily_search_multiple, deduplicate_search_re
 from agent.src.core.research import process_search_results, format_search_output
 
 @tool(parse_docstring=True)
-def tavily_search(
+async def tavily_search(
     query: str,
-    max_results: Annotated[int, InjectedToolArg] = 3,
-    topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
+    max_results: int = 3,
+    topic: Literal["general", "news", "finance"] = "general",
 ) -> str:
     """Fetch results from Tavily search API with content summarization.
 
@@ -20,7 +20,7 @@ def tavily_search(
         Formatted string of search results with summaries
     """
     # Execute search for single query
-    search_results = tavily_search_multiple(
+    search_results = await tavily_search_multiple(
         [query],  # Convert single query to list for the internal function
         max_results=max_results,
         topic=topic,
@@ -31,13 +31,13 @@ def tavily_search(
     unique_results = deduplicate_search_results(search_results)
 
     # Process results with summarization
-    summarized_results = process_search_results(unique_results)
+    summarized_results =  await process_search_results(unique_results)
 
     # Format output for consumption
-    return format_search_output(summarized_results)
+    return await format_search_output(summarized_results)
 
 @tool(parse_docstring=True)
-def think_tool(reflection: str) -> str:
+async def think_tool(reflection: str) -> str:
     """Tool for strategic reflection on research progress and decision-making.
 
     Use this tool after each search to analyze results and plan next steps systematically.

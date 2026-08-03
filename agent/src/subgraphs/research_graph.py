@@ -4,7 +4,7 @@
 This module implements a research agent that can perform iterative web searches
 and synthesis to answer complex research questions.
 """
-
+import asyncio
 from typing_extensions import Literal
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, filter_messages
@@ -14,21 +14,17 @@ from agent.src.prompts import research_agent_prompt, compress_research_system_pr
 from agent.src.utils.helper import get_today_str
 from agent.src.state import ResearcherState, ResearcherOutputState 
 from agent.src.config import settings
-# ===== CONFIGURATION =====
-
-# Set up tools and model binding
-tools = [tavily_search, think_tool]
-tools_by_name = {tool.name: tool for tool in tools}
+from agent.src.mcp import get_mcp_tools
+from agent.src.utils.get_all_tools import get_all_tools
 
 # Initialize models
 model = init_chat_model(model="google_genai:gemini-3.5-flash",api_key=settings.GOOGLE_API_KEY)
-model_with_tools = model.bind_tools(tools)
 summarization_model = init_chat_model(model="google_genai:gemini-3.1-flash-lite", api_key=settings.GOOGLE_API_KEY)
 compress_model = init_chat_model(model="google_genai:gemini-3.5-flash-lite", max_tokens=32000, api_key=settings.GOOGLE_API_KEY)
 
 # ===== AGENT NODES =====
 
-def llm_call(state: ResearcherState):
+async def llm_call(state: ResearcherState):
     """Analyze current state and decide on next actions.
 
     The model analyzes the current conversation state and decides whether to:
@@ -37,40 +33,45 @@ def llm_call(state: ResearcherState):
 
     Returns updated state with the model's response.
     """
+
+    # Add tools to model
+    tools = await get_all_tools()
+    model_with_tools = model.bind_tools(tools)
+
+
+    response = await model_with_tools.ainvoke(
+        [SystemMessage(content=research_agent_prompt)] + state["researcher_messages"]
+    )
     return {
-        "researcher_messages": [
-            model_with_tools.invoke(
-                [SystemMessage(content=research_agent_prompt)] + state["researcher_messages"]
-            )
-        ]
+        "researcher_messages": [response]
     }
-
-def tool_node(state: ResearcherState):
+    
+# Node 2: Execute Tools Concurrently
+async def tool_node(state: ResearcherState):
     """Execute all tool calls from the previous LLM response.
-
-    Executes all tool calls from the previous LLM responses.
-    Returns updated state with tool execution results.
+    
+        Executes all tool calls from the previous LLM responses.
+        Returns updated state with tool execution results.
     """
+    tools = await get_all_tools()
+    tools_by_name = {t.name: t for t in tools}
+
     tool_calls = state["researcher_messages"][-1].tool_calls
 
-    # Execute all tool calls
-    observations = []
-    for tool_call in tool_calls:
-        tool = tools_by_name[tool_call["name"]]
-        observations.append(tool.invoke(tool_call["args"]))
+    async def execute_tool(call):
+        tool = tools_by_name[call["name"]]
+        observation = await tool.ainvoke(call["args"])
+        return ToolMessage(
+            content=str(observation), name=call["name"], tool_call_id=call["id"]
+        )
 
-    # Create tool message outputs
-    tool_outputs = [
-        ToolMessage(
-            content=observation,
-            name=tool_call["name"],
-            tool_call_id=tool_call["id"]
-        ) for observation, tool_call in zip(observations, tool_calls)
-    ]
-
+    tool_outputs = await asyncio.gather(
+        *(execute_tool(c) for c in tool_calls)
+    )
     return {"researcher_messages": tool_outputs}
 
-def compress_research(state: ResearcherState) -> dict:
+# Node 3: Compress Research
+async def compress_research(state: ResearcherState) -> dict:
     """Compress research findings into a concise summary.
 
     Takes all the research messages and tool outputs and creates
@@ -79,7 +80,7 @@ def compress_research(state: ResearcherState) -> dict:
 
     system_message = compress_research_system_prompt.format(date=get_today_str())
     messages = [SystemMessage(content=system_message)] + state.get("researcher_messages", []) + [HumanMessage(content=compress_research_human_message)]
-    response = compress_model.invoke(messages)
+    response = await compress_model.ainvoke(messages)
 
     # Extract raw notes from tool and AI messages
     raw_notes = [

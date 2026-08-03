@@ -12,25 +12,21 @@ The system orchestrates the complete research workflow from initial user
 input through final report delivery.
 """
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
-
+from langchain.chat_models import init_chat_model
 from agent.src.utils.helper import get_today_str, extract_text_content
 from agent.src.prompts import final_report_generation_prompt
 from agent.src.state import AgentState, AgentInputState
 from agent.src.subgraphs.scoping_graph import clarify_with_user, write_research_brief
 from agent.src.subgraphs.supervisor import supervisor_agent
 from agent.src.config import settings
-from agent.src.state import AgentState
 
 # ===== Config =====
 
-from langchain.chat_models import init_chat_model
 writer_model = init_chat_model(model="google_genai:gemini-3.6-flash", api_key=settings.GOOGLE_API_KEY, max_tokens=32000)
 
 # ===== FINAL REPORT GENERATION =====
-
-
 
 async def final_report_generation(state: AgentState):
     """
@@ -41,7 +37,7 @@ async def final_report_generation(state: AgentState):
 
     notes = state.get("notes", [])
 
-    findings = "\n".join(notes)
+    findings = "\n".join(notes) if isinstance(notes, list) else str(notes)
 
     final_report_prompt = final_report_generation_prompt.format(
         research_brief=state.get("research_brief", ""),
@@ -55,7 +51,7 @@ async def final_report_generation(state: AgentState):
 
     return {
         "final_report": final_report.content, 
-        "messages": [f"Here is the final report: {report_text}"],
+        "messages": [AIMessage(content=f"Here is the final report:\n\n{report_text}")],
     }
 
 # ===== GRAPH CONSTRUCTION =====

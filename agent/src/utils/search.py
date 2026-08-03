@@ -1,11 +1,12 @@
 from typing import List, Literal
-from tavily import TavilyClient
+from tavily import AsyncTavilyClient
 from agent.src.config import settings
+import asyncio
 
-# Initialized using a direct string fallback or environment fallback safely
-tavily_client = TavilyClient(api_key=settings.TAVILY_API_KEY)
+# Initialize AsyncTavilyClient for non-blocking network calls
+tavily_client = AsyncTavilyClient(api_key=settings.TAVILY_API_KEY)
 
-def tavily_search_multiple(
+async def tavily_search_multiple(
     search_queries: List[str], 
     max_results: int = 3, 
     topic: Literal["general", "news", "finance"] = "general", 
@@ -24,17 +25,24 @@ def tavily_search_multiple(
     """
 
     # Execute searches sequentially. Note: you can use AsyncTavilyClient to parallelize this step.
-    search_docs = []
-    for query in search_queries:
-        result = tavily_client.search(
-            query,
-            max_results=max_results,
-            include_raw_content=include_raw_content,
-            topic=topic
-        )
-        search_docs.append(result)
+    async def _fetch_single_query(query: str):
+        try:
+            return await tavily_client.search(
+                query,
+                max_results=max_results,
+                include_raw_content=include_raw_content,
+                topic=topic,
+            )
+        except Exception as e:
+            print(f"Error searching query '{query}': {e}")
+            return {"results": []}
+        
+    # Execute all query searches in parallel
+    search_docs = await asyncio.gather(
+        *(_fetch_single_query(q) for q in search_queries)
+    )
 
-    return search_docs
+    return list(search_docs)  # Ensure the result is a list of dictionaries
 
 def deduplicate_search_results(search_results: List[dict]) -> dict:
     """Deduplicate search results by URL to avoid processing duplicate content.
@@ -48,8 +56,8 @@ def deduplicate_search_results(search_results: List[dict]) -> dict:
     unique_results = {}
 
     for response in search_results:
-        for result in response['results']:
-            url = result['url']
+        for result in response['results', []]:
+            url = result.get('url')
             if url not in unique_results:
                 unique_results[url] = result
 

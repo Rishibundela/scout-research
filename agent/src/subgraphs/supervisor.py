@@ -45,7 +45,7 @@ def get_notes_from_tool_calls(messages: list[BaseMessage]) -> list[str]:
     Returns:
         List of research note strings extracted from ToolMessage objects
     """
-    return [tool_msg.content for tool_msg in filter_messages(messages, include_types="tool")]
+    return [str(tool_msg.content) for tool_msg in filter_messages(messages, include_types="tool")]
 
 # Ensure async compatibility for Jupyter environments
 try:
@@ -143,7 +143,7 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
     no_tool_calls = not most_recent_message.tool_calls
     research_complete = any(
         tool_call["name"] == "ResearchComplete" 
-        for tool_call in most_recent_message.tool_calls
+        for tool_call in (most_recent_message.tool_calls or [])
     )
 
     if exceeded_iterations or no_tool_calls or research_complete:
@@ -164,9 +164,9 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
                 if tool_call["name"] == "ConductResearch"
             ]
 
-            # Handle think_tool calls (synchronous)
+            # 1. Handle think_tool calls (async)
             for tool_call in think_tool_calls:
-                observation = think_tool.invoke(tool_call["args"])
+                observation = await think_tool.ainvoke(tool_call["args"])
                 tool_messages.append(
                     ToolMessage(
                         content=observation,
@@ -175,7 +175,7 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
                     )
                 )
 
-            # Handle ConductResearch calls (asynchronous)
+            # 2. Handle ConductResearch calls (parallel async subgraphs)
             if conduct_research_calls:
                 # Launch parallel research agents
                 coros = [
@@ -215,6 +215,9 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
             print(f"Error in supervisor tools: {e}")
             should_end = True
             next_step = END
+
+    # Combined state update
+    all_supervsor_history = supervisor_messages + tool_messages
 
     # Single return point with appropriate state updates
     if should_end:

@@ -33,9 +33,9 @@ class AgentState(MessagesState):
     # Messages exchanged with the supervisor agent for coordination
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
     # Raw unprocessed research notes collected during the research phase
-    raw_notes: Annotated[list[str], operator.add] = []
+    raw_notes: Annotated[list[str], operator.add]
     # Processed and structured notes ready for report generation
-    notes: Annotated[list[str], operator.add] = []
+    notes: Annotated[list[str], operator.add]
     # Final formatted research report
     final_report: str
 
@@ -77,9 +77,9 @@ class SupervisorState(TypedDict):
     # Detailed research brief that guides the overall research direction
     research_brief: str
     # Processed and structured notes ready for final report generation
-    notes: Annotated[list[str], operator.add] = []
+    notes: Annotated[list[str], operator.add]
     # Counter tracking the number of research iterations performed
-    research_iterations: int = 0
+    research_iterations: int
     # Raw unprocessed research notes collected from sub-agent research
-    raw_notes: Annotated[list[str], operator.add] = []
+    raw_notes: Annotated[list[str], operator.add]
 
