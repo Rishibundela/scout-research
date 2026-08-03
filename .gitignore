@@ -13,3 +13,6 @@ wheels/
 .env
 
 .langgraph_api/
+
+# Ignore Streamlit local secrets
+.streamlit/secrets.toml
