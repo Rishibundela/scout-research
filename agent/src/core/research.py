@@ -7,38 +7,65 @@ from agent.src.prompts import summarize_webpage_prompt
 from agent.src.config import settings
 # Import your newly separated utilities cleanly
 from agent.src.utils.helper import get_today_str
+import logging
 
-summarization_model = init_chat_model(model="google_genai:gemini-3.1-flash-lite", temperature=0.0, api_key=settings.GOOGLE_API_KEY)
+logger = logging.getLogger(__name__)
+
+# Summarization Model with Retry & Fallback
+primary_sum_model = init_chat_model(
+    model="google_genai:gemini-3.1-flash-lite",
+    temperature=0.0,
+    api_key=settings.GOOGLE_API_KEY,
+)
+backup_sum_model = init_chat_model(
+    model="google_genai:gemini-3.5-flash-lite",
+    temperature=0.0,
+    api_key=settings.GOOGLE_API_KEY,
+)
+
+reliable_summarizer = (
+    primary_sum_model
+    .with_retry(stop_after_attempt=3, wait_exponential_jitter=True)
+    .with_fallbacks([backup_sum_model.with_retry(stop_after_attempt=2)])
+)
 
 async def summarize_webpage_content(webpage_content: str) -> str:
-    """Summarize webpage content using the configured summarization model."""
+    """
+    Summarize webpage content using reliable model chain with XML prompt isolation.
+    """
     try:
-        structured_model = summarization_model.with_structured_output(Summary)
-        summary = await structured_model.ainvoke([
+        # TIER 2 DEFENSE: Wrap scraped content in <source_data> XML tags
+        isolated_content = f"<source_data>\n{webpage_content}\n</source_data>"
+        
+        structured_model = reliable_summarizer.with_structured_output(Summary)
+        summary: Summary = await structured_model.ainvoke([
             HumanMessage(content=summarize_webpage_prompt.format(
-                webpage_content=webpage_content, 
+                webpage_content=isolated_content, 
                 date=get_today_str()
             ))
         ])
         return f"<summary>\n{summary.summary}\n</summary>\n\n<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
     except Exception as e:
-        return webpage_content[:1000] + "..." if len(webpage_content) > 1000 else webpage_content
+        logger.warning(f"⚠️ Summarizer failed, using raw excerpt fallback: {e}")
+        safe_excerpt = webpage_content[:1000] if webpage_content else "No content retrieved."
+        return f"<summary>\n{safe_excerpt}...\n</summary>"
 
 async def process_search_results(unique_results: dict) -> dict:
-    """Process search results by summarizing content where available."""
+    """Process search results by summarizing content concurrently."""
     urls = list(unique_results.keys())
     tasks = []
+
     for url in urls:
         result = unique_results[url]
         if result.get("raw_content"):
             tasks.append(summarize_webpage_content(result["raw_content"]))
         else:
             # Wrap pre-summarized/short content in an immediate async result
-            async def _instant_content(c=result.get("content", "")):
+            async def _instant_content(c=result.get("content", "No content available.")):
                 return c
-
             tasks.append(_instant_content())
     summaries = await asyncio.gather(*tasks)
+
     summarized_results = {}
     for url, summary_text in zip(urls, summaries):
         summarized_results[url] = {

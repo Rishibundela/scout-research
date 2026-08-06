@@ -25,7 +25,7 @@ class ScoutAgentClient:
             thread_id=thread_id,
             assistant_id=graph_name,
             input=input_data,
-            stream_mode="values",
+            stream_mode="messages",
         ):
             yield event
 

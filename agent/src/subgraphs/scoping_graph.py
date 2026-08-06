@@ -1,4 +1,3 @@
-
 """User Clarification and Research Brief Generation.
 
 This module implements the scoping phase of the research workflow, where we:
@@ -9,91 +8,199 @@ The workflow uses structured output to make deterministic decisions about
 whether sufficient context exists to proceed with research.
 """
 
-from agent.src.config import settings
+import logging
 from typing import Literal
+
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage, get_buffer_string
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import Command
+from langgraph.types import Command, RetryPolicy, TimeoutPolicy
+from langgraph.errors import NodeError  # FIXED: Added missing import!
+
+from agent.src.config import settings
 from agent.src.schemas import ClarifyWithUser, ResearchQuestion
-from agent.src.prompts import clarify_with_user_instructions, transform_messages_into_research_topic_prompt
+from agent.src.prompts import (
+    clarify_with_user_instructions,
+    transform_messages_into_research_topic_prompt,
+)
 from agent.src.state import AgentState, AgentInputState
 from agent.src.utils.helper import get_today_str
+from agent.src.guardrails.input_guard import validate_user_input
+
+logger = logging.getLogger(__name__)
 
 
-# ===== CONFIGURATION =====
+# ===== 1. MODEL DEFINITIONS =====
 
-# Initialize model
-model = init_chat_model(
-    model="google_genai:gemini-3.1-flash-lite", 
+primary_model = init_chat_model(
+    model="google_genai:gemini-3.1-flash-lite",
     temperature=0.0,
-    api_key=settings.GOOGLE_API_KEY
+    api_key=settings.GOOGLE_API_KEY,
+)
+
+backup_model = init_chat_model(
+    model="google_genai:gemini-2.0-flash",  # Ensure valid backup model identifier
+    temperature=0.0,
+    api_key=settings.GOOGLE_API_KEY,
+)
+
+
+def get_reliable_structured_model(pydantic_schema):
+    """
+    Complete Chain:
+    1. Try Primary Model (Retry up to 3 times on transient blips)
+    2. If primary fails all 3 attempts -> Fall back to Backup Model (Retry up to 2 times)
+    """
+    primary_structured = (
+        primary_model
+        .with_structured_output(pydantic_schema)
+        .with_retry(
+            stop_after_attempt=3,
+            wait_exponential_jitter=True,
+        )
     )
 
-# ===== WORKFLOW NODES =====
+    backup_structured = (
+        backup_model
+        .with_structured_output(pydantic_schema)
+        .with_retry(
+            stop_after_attempt=2,
+            wait_exponential_jitter=True,
+        )
+    )
 
-async def clarify_with_user(state: AgentState) -> Command[Literal["write_research_brief", "__end__"]]:
+    return primary_structured.with_fallbacks([backup_structured])
+
+
+# ===== 2. WORKFLOW NODES =====
+
+async def clarify_with_user(
+    state: AgentState,
+) -> Command[Literal["write_research_brief", "__end__"]]:
     """
     Determine if the user's request contains sufficient information to proceed with research.
 
     Uses structured output to make deterministic decisions and avoid hallucination.
     Routes to either research brief generation or ends with a clarification question.
     """
-    # Set up structured output model
-    structured_output_model = model.with_structured_output(ClarifyWithUser)
+    # 1. Fast Zero-Latency Guardrail Check
+    user_query = get_buffer_string(state["messages"])
+    is_safe, message = validate_user_input(user_query)
+    
+    if not is_safe:
+        # Instantly halt and return safety rejection message
+        return Command(
+            goto=END,
+            update={"messages": [AIMessage(content=f"Security Alert: {message}")]}
+        )
+    reliable_model = get_reliable_structured_model(ClarifyWithUser)
 
-    # Invoke the model with clarification instructions
-    response = await structured_output_model.ainvoke([
-        HumanMessage(content=clarify_with_user_instructions.format(
-            messages=get_buffer_string(messages=state["messages"]), 
-            date=get_today_str()
-        ))
-    ])
+    prompt = HumanMessage(
+        content=clarify_with_user_instructions.format(
+            messages=get_buffer_string(messages=state["messages"]),
+            date=get_today_str(),
+        )
+    )
+
+    response: ClarifyWithUser = await reliable_model.ainvoke([prompt])
 
     # Route based on clarification need
     if response.need_clarification:
         return Command(
-            goto=END, 
-            update={"messages": [AIMessage(content=response.question)]}
+            goto=END,
+            update={"messages": [AIMessage(content=response.question)]},
         )
     else:
         return Command(
-            goto="write_research_brief", 
-            update={"messages": [AIMessage(content=response.verification)]}
+            goto="write_research_brief",
+            update={"messages": [AIMessage(content=response.verification)]},
         )
 
-async def write_research_brief(state: AgentState):
+
+async def write_research_brief(state: AgentState) -> dict:
     """
     Transform the conversation history into a comprehensive research brief.
 
     Uses structured output to ensure the brief follows the required format
     and contains all necessary details for effective research.
     """
-    # Set up structured output model
-    structured_output_model = model.with_structured_output(ResearchQuestion)
+    reliable_model = get_reliable_structured_model(ResearchQuestion)
 
-    # Generate research brief from conversation history
-    response = await structured_output_model.ainvoke([
-        HumanMessage(content=transform_messages_into_research_topic_prompt.format(
+    prompt = HumanMessage(
+        content=transform_messages_into_research_topic_prompt.format(
             messages=get_buffer_string(state.get("messages", [])),
-            date=get_today_str()
-        ))
-    ])
+            date=get_today_str(),
+        )
+    )
+    response: ResearchQuestion = await reliable_model.ainvoke([prompt])
 
-    # Update state with generated research brief and pass it to the supervisor
     return {
         "research_brief": response.research_brief,
-        "supervisor_messages": [HumanMessage(content=f"{response.research_brief}")]
+        "supervisor_messages": [HumanMessage(content=f"{response.research_brief}")],
     }
 
-# ===== GRAPH CONSTRUCTION =====
 
-# Build the scoping workflow
+# ===== 3. LANGGRAPH NATIVE ERROR HANDLER NODE =====
+
+def handle_scoping_error(
+    state: AgentState, error: NodeError
+) -> Command[Literal["__end__"]]:
+    """
+    LangGraph native error handler.
+    Fires automatically when a node's RetryPolicy is exhausted.
+    Receives injected `NodeError` containing node name and exception context.
+    """
+    logger.error(
+        f"❌ Node '{error.node}' exhausted all retries! Underlying error: {error.error}"
+    )
+
+    if error.node == "clarify_with_user":
+        fallback_msg = "I encountered a service issue while processing your request. Could you please rephrase?"
+        return Command(
+            goto=END,
+            update={"messages": [AIMessage(content=fallback_msg)]},
+        )
+
+    # Fallback for write_research_brief
+    raw_context = get_buffer_string(state.get("messages", []))
+    return Command(
+        goto=END,
+        update={
+            "research_brief": raw_context,
+            "messages": [
+                AIMessage(content=f"Emergency Brief Generated:\n{raw_context}")
+            ],
+        },
+    )
+
+
+# ===== 4. GRAPH CONSTRUCTION WITH NATIVE POLICIES =====
+
+scoping_policy = RetryPolicy(
+    max_attempts=3,
+    initial_interval=1.0,
+    backoff_factor=2.0,
+    jitter=True,
+)
+
 scoping_builder = StateGraph(AgentState, input_schema=AgentInputState)
 
-# Add workflow nodes
-scoping_builder.add_node("clarify_with_user", clarify_with_user)
-scoping_builder.add_node("write_research_brief", write_research_brief)
+# Wire nodes with RetryPolicy, Timeout, AND error_handler natively!
+scoping_builder.add_node(
+    "clarify_with_user",
+    clarify_with_user,
+    retry=scoping_policy,
+    timeout=TimeoutPolicy(run_timeout=30),  # Caps single attempt execution at 30 seconds
+    error_handler=handle_scoping_error,
+)
+
+scoping_builder.add_node(
+    "write_research_brief",
+    write_research_brief,
+    retry=scoping_policy,
+    timeout=TimeoutPolicy(run_timeout=45),  # Caps brief generation at 45 seconds
+    error_handler=handle_scoping_error,
+)
 
 # Add workflow edges
 scoping_builder.add_edge(START, "clarify_with_user")

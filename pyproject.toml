@@ -22,6 +22,7 @@ dependencies = [
     "markdown>=3.10.3",
     "mcp>=1.0.0,<2.0.0",
     "pillow>=12.3.0",
+    "pybreaker>=1.4.1",
     "pydantic>=2.13.4",
     "pygraphviz>=2.0.1",
     "python-dotenv>=1.2.2",
@@ -31,4 +32,4 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["agent"]
+packages = ["agent","agent_client"]

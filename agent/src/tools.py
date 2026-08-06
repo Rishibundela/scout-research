@@ -19,21 +19,15 @@ async def tavily_search(
     Returns:
         Formatted string of search results with summaries
     """
-    # Execute search for single query
     search_results = await tavily_search_multiple(
-        [query],  # Convert single query to list for the internal function
+        [query],
         max_results=max_results,
         topic=topic,
         include_raw_content=True,
     )
 
-    # Deduplicate results by URL to avoid processing duplicate content
     unique_results = deduplicate_search_results(search_results)
-
-    # Process results with summarization
-    summarized_results =  await process_search_results(unique_results)
-
-    # Format output for consumption
+    summarized_results = await process_search_results(unique_results)
     return await format_search_output(summarized_results)
 
 @tool(parse_docstring=True)
