@@ -35,6 +35,7 @@ from agent.src.schemas import ConductResearch, ResearchComplete
 from agent.src.utils.helper import get_today_str
 from agent.src.tools import think_tool
 from agent.src.config import settings
+from agent.src.utils.compaction import compact_research_notes
 
 logger = logging.getLogger(__name__)
 
@@ -226,15 +227,21 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
             should_end = True
             next_step = END
 
-    # Combined state update
     all_history = supervisor_messages + tool_messages
+    raw_notes_collected = get_notes_from_tool_calls(all_history)
 
-    # Single return point with appropriate state updates
+    # Apply Context Compaction Gate when updating notes
+    compacted_notes = await compact_research_notes(
+        notes=raw_notes_collected,
+        token_threshold=10000,      # Trigger compaction if notes exceed ~10k tokens
+        recent_notes_to_keep=2       # Always preserve the 2 most recent research findings
+    )
+
     if should_end:
         return Command(
-            goto=next_step,
+            goto=END,
             update={
-                "notes": get_notes_from_tool_calls(all_history),
+                "notes": compacted_notes,
                 "research_brief": state.get("research_brief", "")
             }
         )
@@ -243,7 +250,8 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
             goto=next_step,
             update={
                 "supervisor_messages": tool_messages,
-                "raw_notes": all_raw_notes
+                "raw_notes": all_raw_notes,
+                "notes": compacted_notes
             }
         )
 

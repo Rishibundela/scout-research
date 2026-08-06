@@ -18,6 +18,7 @@ from langgraph.types import Command, RetryPolicy, TimeoutPolicy
 from langgraph.errors import NodeError  # FIXED: Added missing import!
 
 from agent.src.config import settings
+from agent.src.guardrails.topic_classifier import classify_topic
 from agent.src.schemas import ClarifyWithUser, ResearchQuestion
 from agent.src.prompts import (
     clarify_with_user_instructions,
@@ -91,8 +92,26 @@ async def clarify_with_user(
         # Instantly halt and return safety rejection message
         return Command(
             goto=END,
-            update={"messages": [AIMessage(content=f"Security Alert: {message}")]}
+            update={"messages": [AIMessage(content=f"Security Violation: {message}")]}
         )
+    
+    # 2. Topic Classification Guardrail
+    classification = await classify_topic(user_query)
+
+    if not classification.is_safe:
+        logger.warning(f"🚨 [Tier 2 Block] Safety violation: {classification.rejection_reason}")
+        return Command(
+            goto=END,
+            update={"messages": [AIMessage(content=f"Safety Rejection: {classification.rejection_reason}")]},
+        )
+
+    if not classification.is_research_topic:
+        logger.info(f"ℹ️ [Tier 2 Short-Circuit] Non-research query category: {classification.category}")
+        return Command(
+            goto=END,
+            update={"messages": [AIMessage(content=f"Scope Notice: {classification.rejection_reason}")]},
+        )
+    
     reliable_model = get_reliable_structured_model(ClarifyWithUser)
 
     prompt = HumanMessage(

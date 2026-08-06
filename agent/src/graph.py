@@ -28,6 +28,11 @@ from agent.src.state import AgentState, AgentInputState
 from agent.src.subgraphs.scoping_graph import clarify_with_user, write_research_brief
 from agent.src.subgraphs.supervisor import supervisor_agent
 from agent.src.config import settings
+from agent.src.guardrails.output_guard import (
+    sanitize_secrets_and_pii,
+    verify_url_grounding,
+    validate_report_structure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +80,30 @@ async def final_report_generation(state: AgentState):
     return {
         "final_report": final_report.content, 
         "messages": [AIMessage(content=f"Here is the final report:\n\n{report_text}")],
+    }
+
+async def output_guardrail_node(state: AgentState) -> dict:
+    """
+    LangGraph Node: Intercepts synthesized final report, scrubs PII/secrets,
+    verifies URL citation grounding against raw notes, and enforces structure.
+    """
+    raw_report = state.get("final_report", "")
+    notes = state.get("notes", [])
+
+    # Step 1: Scrub accidental API keys / secrets
+    clean_report = sanitize_secrets_and_pii(raw_report)
+
+    # Step 2: Grounding check (detect & redact hallucinated URLs)
+    clean_report, hallucinated_count = verify_url_grounding(clean_report, notes)
+    if hallucinated_count > 0:
+        logger.info(f"🛡️ Output Guardrail flagged and patched {hallucinated_count} hallucinated citation(s).")
+
+    # Step 3: Structural validation
+    final_sanitized_report = validate_report_structure(clean_report)
+
+    return {
+        "final_report": final_sanitized_report,
+        "messages": [AIMessage(content=f"Here is the finalized research report:\n\n{final_sanitized_report}")],
     }
 
 # ===== 3. TOP-LEVEL ERROR HANDLER =====
@@ -136,12 +165,20 @@ deep_researcher_builder.add_node(
     timeout=TimeoutPolicy(run_timeout=180),  # 3 minutes for report writing
     error_handler=handle_main_error
 )
+deep_researcher_builder.add_node(
+    "output_guardrail", 
+    output_guardrail_node,
+    retry=main_policy,
+    timeout=TimeoutPolicy(run_timeout=30),
+    error_handler=handle_main_error
+)
 
 # Connect workflow edges
 deep_researcher_builder.add_edge(START, "clarify_with_user")
 deep_researcher_builder.add_edge("write_research_brief", "supervisor_subgraph")
 deep_researcher_builder.add_edge("supervisor_subgraph", "final_report_generation")
-deep_researcher_builder.add_edge("final_report_generation", END)
+deep_researcher_builder.add_edge("final_report_generation", "output_guardrail")
+deep_researcher_builder.add_edge("output_guardrail", END)
 
 # Compile the full workflow
 deep_research_agent = deep_researcher_builder.compile()
