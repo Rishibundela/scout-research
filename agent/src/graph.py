@@ -25,7 +25,7 @@ from langchain.chat_models import init_chat_model
 from agent.src.utils.helper import get_today_str, extract_text_content
 from agent.src.prompts import final_report_generation_prompt
 from agent.src.state import AgentState, AgentInputState
-from agent.src.subgraphs.scoping_graph import clarify_with_user, write_research_brief
+from agent.src.subgraphs.scoping_graph import clarify_with_user, write_research_brief, general_assistant_node, handle_scoping_error
 from agent.src.subgraphs.supervisor import supervisor_agent
 from agent.src.config import settings
 from agent.src.guardrails.output_guard import (
@@ -88,6 +88,10 @@ async def output_guardrail_node(state: AgentState) -> dict:
     verifies URL citation grounding against raw notes, and enforces structure.
     """
     raw_report = state.get("final_report", "")
+    if isinstance(raw_report, list):
+        raw_report = extract_text_content(raw_report)
+    elif not isinstance(raw_report, str):
+        raw_report = str(raw_report)
     notes = state.get("notes", [])
 
     # Step 1: Scrub accidental API keys / secrets
@@ -148,16 +152,25 @@ deep_researcher_builder.add_node(
     clarify_with_user,
     retry=main_policy,
     timeout=TimeoutPolicy(run_timeout=30),
+    error_handler=handle_scoping_error
+)
+deep_researcher_builder.add_node(
+    "general_assistant",
+    general_assistant_node,
+    retry=main_policy,
+    timeout=TimeoutPolicy(run_timeout=30),
     error_handler=handle_main_error
 )
+
 deep_researcher_builder.add_node(
     "write_research_brief", 
     write_research_brief,
     retry=main_policy,
     timeout=TimeoutPolicy(run_timeout=45),
-    error_handler=handle_main_error
+    error_handler=handle_scoping_error
 )
 deep_researcher_builder.add_node("supervisor_subgraph", supervisor_agent)
+
 deep_researcher_builder.add_node(
     "final_report_generation", 
     final_report_generation,
@@ -175,6 +188,7 @@ deep_researcher_builder.add_node(
 
 # Connect workflow edges
 deep_researcher_builder.add_edge(START, "clarify_with_user")
+deep_researcher_builder.add_edge("general_assistant", END)
 deep_researcher_builder.add_edge("write_research_brief", "supervisor_subgraph")
 deep_researcher_builder.add_edge("supervisor_subgraph", "final_report_generation")
 deep_researcher_builder.add_edge("final_report_generation", "output_guardrail")
