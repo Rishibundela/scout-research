@@ -12,7 +12,7 @@ import logging
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, AIMessage, get_buffer_string
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, get_buffer_string
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, RetryPolicy, TimeoutPolicy
 from langgraph.errors import NodeError  # FIXED: Added missing import!
@@ -23,6 +23,7 @@ from agent.src.schemas import ClarifyWithUser, ResearchQuestion
 from agent.src.prompts import (
     clarify_with_user_instructions,
     transform_messages_into_research_topic_prompt,
+    general_assistant_prompt,
 )
 from agent.src.state import AgentState, AgentInputState
 from agent.src.utils.helper import get_today_str
@@ -40,9 +41,14 @@ primary_model = init_chat_model(
 )
 
 backup_model = init_chat_model(
-    model="google_genai:gemini-2.0-flash",  # Ensure valid backup model identifier
+    model="google_genai:gemini-3.5-flash-lite",  # Ensure valid backup model identifier
     temperature=0.0,
     api_key=settings.GOOGLE_API_KEY,
+)
+
+general_llm = init_chat_model(
+    model="google_genai:gemini-3.1-flash-lite", 
+    api_key=settings.GOOGLE_API_KEY
 )
 
 
@@ -84,33 +90,24 @@ async def clarify_with_user(
     Uses structured output to make deterministic decisions and avoid hallucination.
     Routes to either research brief generation or ends with a clarification question.
     """
-    # 1. Fast Zero-Latency Guardrail Check
+    # 1. Fast Zero-Latency Regex Guardrail Check
     user_query = get_buffer_string(state["messages"])
-    is_safe, message = validate_user_input(user_query)
+    is_safe_regex, regex_message = validate_user_input(user_query)
     
-    if not is_safe:
+    if not is_safe_regex:
         # Instantly halt and return safety rejection message
-        return Command(
-            goto=END,
-            update={"messages": [AIMessage(content=f"Security Violation: {message}")]}
-        )
+        return Command(goto=END, update={"messages": [AIMessage(content=f"Request Blocked: {regex_message}")]})
     
     # 2. Topic Classification Guardrail
     classification = await classify_topic(user_query)
 
-    if not classification.is_safe:
-        logger.warning(f"🚨 [Tier 2 Block] Safety violation: {classification.rejection_reason}")
-        return Command(
-            goto=END,
-            update={"messages": [AIMessage(content=f"Safety Rejection: {classification.rejection_reason}")]},
-        )
+    # Route based on classification
+    if classification.category == "harmful_dangerous":
+        return Command(goto=END, update={"messages": [AIMessage(content=f"Safety Notice: {classification.rejection_reason}")]})
 
-    if not classification.is_research_topic:
-        logger.info(f"ℹ️ [Tier 2 Short-Circuit] Non-research query category: {classification.category}")
-        return Command(
-            goto=END,
-            update={"messages": [AIMessage(content=f"Scope Notice: {classification.rejection_reason}")]},
-        )
+    elif classification.category == "general_chitchat":
+        # Route to general chitchat assistant node
+        return Command(goto="general_assistant")
     
     reliable_model = get_reliable_structured_model(ClarifyWithUser)
 
@@ -135,6 +132,17 @@ async def clarify_with_user(
             update={"messages": [AIMessage(content=response.verification)]},
         )
 
+async def general_assistant_node(state: AgentState) -> dict:
+    """Handles chitchat and general non-research questions fast and cheaply."""
+    user_query = state["messages"][-1].content
+    response = await general_llm.ainvoke([
+        SystemMessage(content=general_assistant_prompt),
+        HumanMessage(content=user_query)
+    ])
+    
+    return {
+        "messages": [AIMessage(content=response.content)]
+    }
 
 async def write_research_brief(state: AgentState) -> dict:
     """
@@ -221,8 +229,11 @@ scoping_builder.add_node(
     error_handler=handle_scoping_error,
 )
 
+scoping_builder.add_node("general_assistant", general_assistant_node)
+
 # Add workflow edges
 scoping_builder.add_edge(START, "clarify_with_user")
+scoping_builder.add_edge("general_assistant", END)
 scoping_builder.add_edge("write_research_brief", END)
 
 # Compile the workflow

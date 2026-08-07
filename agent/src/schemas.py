@@ -5,7 +5,7 @@ This defines structured schemas used for
 the research agent scoping workflow, including researcher state management and output schemas.
 """
 from pydantic import BaseModel, Field
-from langchain_core.tools import tool
+from typing import Literal
 
 # ===== STRUCTURED OUTPUT SCHEMAS =====
 
@@ -46,4 +46,15 @@ class ResearchComplete(BaseModel):
     status: str = Field(
         default="complete", 
         description="Must be set to 'complete' when research is finished."
+    )
+
+class TopicClassification(BaseModel):
+    """Schema for classifying incoming user requests before execution."""
+    
+    category: Literal["valid_research", "general_chitchat", "harmful_dangerous"] = Field(
+        description="Categorize the query into deep research, general chitchat/QA, or harmful content."
+    )
+    rejection_reason: str = Field(
+        default="",
+        description="Reason if the topic is harmful or dangerous."
     )

@@ -14,7 +14,7 @@ from agent.src.schemas import TopicClassification
 logger = logging.getLogger(__name__)
 
 # System instructions for classification
-CLASSIFIER_PROMPT = """You are a high-speed security and scope classifier for an automated Deep Research Agent.
+classifier_prompt = """You are a high-speed security and scope classifier for an automated Deep Research Agent.
 
 Analyze the user query and classify it into one of these categories:
 1. 'valid_research': Questions requiring web search, technical analysis, market research, history, science, synthesis, or deep investigation.
@@ -52,7 +52,7 @@ async def classify_topic(user_query: str) -> TopicClassification:
     """Classifies user query against safety boundaries and research scope."""
     try:
         response: TopicClassification = await reliable_classifier.ainvoke([
-            SystemMessage(content=CLASSIFIER_PROMPT),
+            SystemMessage(content=classifier_prompt),
             HumanMessage(content=user_query)
         ])
         return response

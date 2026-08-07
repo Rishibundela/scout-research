@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 
 # Primary Model for Reasoning & Tool Calling
 primary_model = init_chat_model(
-    model="google_genai:gemini-2.0-flash",
+    model="google_genai:gemini-3.1-flash-lite",
     api_key=settings.GOOGLE_API_KEY,
 )
 backup_model = init_chat_model(
-    model="google_genai:gemini-1.5-pro",
+    model="google_genai:gemini-3.5-flash-lite",
     api_key=settings.GOOGLE_API_KEY,
 )
 
