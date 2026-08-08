@@ -393,6 +393,28 @@ graph TD
     A[Raw Material Input] --> B[Sulfide Electrolyte Processing]
     B --> C[Cold Sintering Press]
     C --> D[Anode-Free Assembly]
+</Visual Diagrams (Mermaid.js)>
+<Citation Rules>
+1. **Inline Reference Style**:
+   - Use bracketed sequential numbers in the body text for all facts, metrics, and claims (e.g., `[1]`, `[2]`).
+   - Place citations directly following the metric or statement they support (e.g., *"The project achieved 12 GWh capacity in Q3 [1]."*).
+   - Combine multiple sources using adjacent brackets (e.g., `[1][2]`).
+
+2. **Sequential Assignment**:
+   - Assign numbers sequentially (`[1]`, `[2]`, `[3]...`) in the order sources are first introduced in the report text.
+   - Reuse the same assigned number if a source is referenced multiple times.
+
+3. **Sources Section Format**:
+   - Conclude the report with a final section titled: `## Sources`
+   - List every source sequentially without gaps in the numbering.
+   - Format each entry on a new line as a Markdown list item containing the full, valid HTTP/HTTPS URL:
+     `[1] Source Title: https://example.com/article_path`
+     `[2] Source Title: https://example.com/another_path`
+
+4. **Source Fidelity & Constraints**:
+   - Do NOT include citation numbers (e.g., `[1]`) inside Mermaid.js visual diagram blocks.
+   - Reference ONLY sources explicitly present in the `<Findings>` section. Never invent titles or URLs.
+</Citation Rules>
 """
 general_assistant_prompt = """You are the conversational interface for Scout, an AI Deep Research System.
 
