@@ -43,10 +43,10 @@ async def get_mcp_tools() -> list:
     try:
         client = get_mcp_client()
         _cached_mcp_tools = await client.get_tools()
-        logger.info(f"✅ Loaded {len(_cached_mcp_tools)} tools from MCP server.")
+        logger.info(f"Loaded {len(_cached_mcp_tools)} tools from MCP server.")
         return _cached_mcp_tools
     except Exception as e:
         logger.error(
-            f"⚠️ Failed to connect to MCP server or load tools: {e}. Proceeding without MCP tools."
+            f"Failed to connect to MCP server or load tools: {e}. Proceeding without MCP tools."
         )
         return []

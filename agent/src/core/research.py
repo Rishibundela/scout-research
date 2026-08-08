@@ -44,10 +44,13 @@ async def summarize_webpage_content(webpage_content: str) -> str:
                 date=get_today_str()
             ))
         ])
-        return f"<summary>\n{summary.summary}\n</summary>\n\n<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
+        return (
+            f"<summary>\n{summary.summary}\n</summary>\n\n"
+            f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
+        )
     except Exception as e:
         logger.warning(f"⚠️ Summarizer failed, using raw excerpt fallback: {e}")
-        safe_excerpt = webpage_content[:1000] if webpage_content else "No content retrieved."
+        safe_excerpt = webpage_content[:1200] if webpage_content else "No content retrieved."
         return f"<summary>\n{safe_excerpt}...\n</summary>"
 
 async def process_search_results(unique_results: dict) -> dict:
@@ -75,16 +78,17 @@ async def process_search_results(unique_results: dict) -> dict:
     return summarized_results
 
 async def format_search_output(summarized_results: dict) -> str:
-    """Format search results into a well-structured string output."""
+    """Format search results into chunk-bound structured string output."""
     if not summarized_results:
         return "No valid search results found."
+        
     formatted_output = "Search results: \n\n"
     for i, (url, result) in enumerate(summarized_results.items(), 1):
         formatted_output += (
-            f"--- SOURCE {i}: {result['title']} ---\n"
-            f"URL: {url}\n\n"
-            f"SUMMARY:\n{result['content']}\n\n"
-            + "-" * 80
-            + "\n\n"
+            f"--- RESEARCH CHUNK {i} START ---\n"
+            f"SOURCE TITLE: {result['title']}\n"
+            f"SOURCE PERMALINK: {url}\n\n"
+            f"FACTUAL CONTENT & SUMMARY:\n{result['content']}\n"
+            f"--- RESEARCH CHUNK {i} END ---\n\n"
         )
     return formatted_output

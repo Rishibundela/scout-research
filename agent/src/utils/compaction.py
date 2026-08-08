@@ -85,12 +85,12 @@ async def compact_research_notes(
         compacted_notes = [executive_summary] + recent_notes
         
         new_tokens = estimate_token_count(compacted_notes)
-        logger.info(f"✅ Compaction complete! Reduced context size from {current_tokens} to {new_tokens} tokens.")
+        logger.info(f"Compaction complete! Reduced context size from {current_tokens} to {new_tokens} tokens.")
         
         return compacted_notes
 
     except Exception as e:
-        logger.error(f"⚠️ Compaction failed: {e}. Falling back to uncompacted notes.")
+        logger.error(f"Compaction failed: {e}. Falling back to uncompacted notes.")
         return notes
 
 def prepare_compact_thread_context(state: AgentState) -> list:

@@ -1,13 +1,13 @@
 """Output Guardrail Engine for Deep Research Agent.
 
-Sanitizes secrets/PII, validates URL citations against collected notes,
-and enforces structural completeness on synthesized final reports.
+Sanitizes secrets/PII, cleans up raw LaTeX units, validates URL citations 
+against collected notes, and enforces structural completeness on final reports.
 """
 
 import re
 import logging
-from typing import List, Tuple
-from urllib.parse import urlparse  # FIXED: Added missing import
+from typing import List, Tuple, Set
+from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -33,50 +33,124 @@ def sanitize_secrets_and_pii(text: str) -> str:
     return sanitized_text
 
 
-def normalize_url(url: str) -> str:
+def sanitize_latex_units(text: str) -> str:
     """
-    Normalizes a URL string by converting to lowercase, removing protocols, 
-    stripping 'www.', and dropping trailing slashes for robust comparison.
+    Cleans raw LaTeX math delimiters, degree symbols, and chemistry formulas
+    into plain Markdown for flawless UI rendering.
+    """
+    if not text:
+        return text
+
+    # 1. Strip raw LaTeX text wrappers: $\text{Unit}$ or \text{Unit} -> Unit
+    text = re.sub(r'\$\s*\\text\{([^}]+)\}\s*\$', r'\1', text)
+    text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
+
+    # 2. Fix degree Celsius formatting: -60^\circC, -60^\circ C, \circC -> -60°C
+    text = re.sub(r'\\circ\s*C?', '°C', text)
+    text = re.sub(r'\^\s*°C', '°C', text)
+
+    # 3. Strip stray math enclosure dollars around simple text/ranges:
+    # e.g., $dew point < -60°C$ -> dew point < -60°C
+    text = re.sub(r'\$([a-zA-Z0-9\s°C<>\-\/_%]+)\$', r'\1', text)
+
+    # 4. Clean up exponent scientific notation: 10^{-3} S/cm -> 10⁻³ S/cm
+    superscripts = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '-': '⁻'}
+    
+    def replace_super(match):
+        val = match.group(1)
+        return ''.join(superscripts.get(c, c) for c in val)
+
+    text = re.sub(r'10\^\{([^}]+)\}', replace_super, text)
+
+    return text
+
+
+# =====================================================================
+# 1. HERE IS THE CANONICALIZE FUNCTION (Replaces normalize_url)
+# =====================================================================
+def canonicalize_url(url: str, keep_scheme: bool = False) -> str:
+    """
+    Strips query parameters (?utm=...), tracking fragments (#...), www., 
+    trailing slashes, and stray punctuation from URLs.
+    
+    - keep_scheme=False -> Returns 'domain.com/path' (Best for lookup comparison)
+    - keep_scheme=True  -> Returns 'https://domain.com/path' (Best for clean links)
     """
     if not url:
         return ""
     try:
-        parsed = urlparse(url.lower().strip())
-        domain_and_path = f"{parsed.netloc}{parsed.path}".replace("www.", "").rstrip("/")
-        return domain_and_path
+        # Strip stray closing brackets/quotes captured by broad regexes
+        clean_url = url.strip().rstrip(")]>,.'\"")
+        parsed = urlparse(clean_url.lower())
+        
+        clean_netloc = parsed.netloc.replace("www.", "")
+        clean_path = parsed.path.rstrip("/")
+        
+        # For set matching, ignore http vs https
+        if not keep_scheme:
+            return f"{clean_netloc}{clean_path}"
+            
+        scheme = parsed.scheme if parsed.scheme in ["http", "https"] else "https"
+        return urlunparse((scheme, clean_netloc, clean_path, "", "", ""))
     except Exception:
-        return url.lower().strip()
+        return url.lower().strip().rstrip("/")
 
 
 def verify_url_grounding(report_text: str, notes: list) -> tuple[str, int]:
     """
-    Cross-references cited Markdown URLs [Title](URL) in the report against raw notes.
-    If a URL is missing from scraped notes, flags it cleanly OUTSIDE the markdown brackets
-    so the link remains valid and clickable.
+    Cross-references cited URLs in the report against raw notes memory.
+    Handles both Markdown links `[Title](URL)` and list links `[1] Title: URL`.
+    Places unverified tags OUTSIDE parentheses so URLs remain 100% clickable.
     """
     raw_notes_str = "\n".join(notes) if isinstance(notes, list) else str(notes)
     
-    # Extract all raw URLs from scraped notes and normalize them
-    raw_urls = re.findall(r'https?://[^\s\)]+', raw_notes_str)
-    normalized_scraped_urls = {normalize_url(u) for u in raw_urls if normalize_url(u)}
-
-    # Regex specifically matching Markdown Links: [Link Title](https://...)
-    markdown_link_pattern = r'\[([^\]]+)\]\((https?://[^\)]+)\)'
-    matches = re.findall(markdown_link_pattern, report_text)
+    # Extract raw URLs from notes and canonicalize them into a lookup set
+    raw_urls = re.findall(r'https?://[^\s\)\>\]]+', raw_notes_str)
     
-    patched_count = 0
+    # 📌 LOCATION 1: Canonicalizing scraped notes URLs
+    normalized_scraped_urls: Set[str] = {
+        canonicalize_url(u, keep_scheme=False) for u in raw_urls if canonicalize_url(u, keep_scheme=False)
+    }
 
-    for title, url in matches:
-        norm_cited = normalize_url(url)
+    patched_count = 0
+    processed_urls: Set[str] = set()
+
+    # 1. Match Markdown Links: [Link Title](https://...)
+    markdown_link_pattern = r'\[([^\]]+)\]\((https?://[^\s\)]+)\)'
+    markdown_matches = re.findall(markdown_link_pattern, report_text)
+    
+    for title, url in markdown_matches:
+        if url in processed_urls:
+            continue
+            
+        norm_cited = canonicalize_url(url, keep_scheme=False)
         
-        # Check if the core domain + path exists in raw scraped memory
         if norm_cited and norm_cited not in normalized_scraped_urls:
             original_markdown = f"[{title}]({url})"
-            # FIXED: Place [Unverified] OUTSIDE the () so the link syntax stays 100% valid & clickable!
-            patched_markdown = f"[{title}]({url}) *(Unverified Source)*"
-            
-            report_text = report_text.replace(original_markdown, patched_markdown)
-            patched_count += 1
+            if f"{original_markdown} *(Unverified Source)*" not in report_text:
+                patched_markdown = f"[{title}]({url}) *(Unverified Source)*"
+                report_text = report_text.replace(original_markdown, patched_markdown)
+                patched_count += 1
+        processed_urls.add(url)
+
+    # 2. Match Line Item Sources: [1] Title: https://...
+    line_item_pattern = r'(\[\d+\]\s+[^:\n]+:\s*)(https?://[^\s]+)'
+    line_matches = re.findall(line_item_pattern, report_text)
+
+    for prefix, url in line_matches:
+        if url in processed_urls:
+            continue
+
+        
+        norm_cited = canonicalize_url(url, keep_scheme=False)
+        
+        if norm_cited and norm_cited not in normalized_scraped_urls:
+            original_line = f"{prefix}{url}"
+            if "*(Unverified Source)*" not in original_line:
+                patched_line = f"{prefix}{url} *(Unverified Source)*"
+                report_text = report_text.replace(original_line, patched_line)
+                patched_count += 1
+        processed_urls.add(url)
 
     return report_text, patched_count
 

@@ -40,7 +40,7 @@ def validate_user_input(text: str) -> Tuple[bool, str]:
     # Scan for prompt injection patterns
     for pattern in INJECTION_PATTERNS:
         if re.search(pattern, text):
-            logger.warning(f"🚨 Security Guardrail Triggered! Matched pattern: {pattern}")
+            logger.warning(f"Security Guardrail Triggered! Matched pattern: {pattern}")
             return False, "Input query contains restricted system control phrases or prompt injection patterns."
 
     return True, text

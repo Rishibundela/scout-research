@@ -381,6 +381,17 @@ For each section of the report, do the following:
 - Use bullet points to list out information when appropriate, but by default, write in paragraph form. Use tables for multi-attribute comparisons.
 </Section Guidelines>
 
+<Fact-Locking & Precision Rules>
+- VERBATIM METRICS: Preserve all specific numbers, percentages, energy densities, patent references, and exact metrics explicitly reported in <Findings>. If findings state "844 Wh/L", write "844 Wh/L" — do NOT round to ">840 Wh/L" or hedge with "approx 800 Wh/L".
+- IMMUTABLE PROPER NOUNS: Keep exact facility names, geographic locations, and internal codenames intact (e.g., preserve "Taoyuan", "Louisville", "WuKong"; never paraphrase or alter proper nouns).
+- MULTI-SOURCE VARIANCES: If multiple retrieved sources report slightly different projections (e.g., 40 GWh vs 45 GWh), express the value as an explicit range (e.g., "40–45 GWh [1][2]") rather than picking an arbitrary rounded estimate.
+</Fact-Locking & Precision Rules>
+
+<Narrative & Technical Depth Directive>
+1. PROSE BRIDGING: Every table and Mermaid diagram MUST be preceded by at least 2 detailed narrative paragraphs explaining the physical, chemical, or financial mechanisms behind the data.
+2. MECHANISTIC EXPLANATION: Do not simply list metrics. Explain *why* a metric was achieved (e.g., instead of just stating "844 Wh/L", explain how the thin ceramic separator suppresses dendrite formation and enables in-situ lithium plating under low stack pressure).
+</Narrative & Technical Depth Directive>
+
 <Visual Diagrams (Mermaid.js)>
 To enhance structural clarity and visualize complex processes, embed inline visual diagrams wherever applicable using valid ```mermaid code blocks:
 - **System Architectures & Process Flows**: Use `graph TD` or `graph LR`.
@@ -394,26 +405,38 @@ graph TD
     B --> C[Cold Sintering Press]
     C --> D[Anode-Free Assembly]
 </Visual Diagrams (Mermaid.js)>
+
 <Citation Rules>
+CRITICAL MANDATE: CITATIONS ARE NON-NEGOTIABLE. EVERY SINGLE FACT, METRIC, DATE, CODENAME, AND CLAIM MUST BE INLINE CITED WITH BRACKETS [1], [2] MATCHING A VALID LINK IN THE ## SOURCES SECTION. REPORTS WITHOUT INLINE BRACKET CITATIONS ARE INCOMPLETE SYSTEM FAILURES.
+
 1. **Inline Reference Style**:
-   - Use bracketed sequential numbers in the body text for all facts, metrics, and claims (e.g., `[1]`, `[2]`).
-   - Place citations directly following the metric or statement they support (e.g., *"The project achieved 12 GWh capacity in Q3 [1]."*).
+   - Every claim, metric, figure, or codename MUST be followed immediately by an inline bracket citation [1], [2].
+   - Example: *"QuantumScape expanded its Cobra heat-treatment line in 2026 [1] to support 40 GWh production [2]."*
    - Combine multiple sources using adjacent brackets (e.g., `[1][2]`).
 
 2. **Sequential Assignment**:
-   - Assign numbers sequentially (`[1]`, `[2]`, `[3]...`) in the order sources are first introduced in the report text.
+   - Assign numbers sequentially (`[1]`, `[2]`, `[3]...`) in the exact order sources are first introduced in the report text.
    - Reuse the same assigned number if a source is referenced multiple times.
 
 3. **Sources Section Format**:
    - Conclude the report with a final section titled: `## Sources`
    - List every source sequentially without gaps in the numbering.
-   - Format each entry on a new line as a Markdown list item containing the full, valid HTTP/HTTPS URL:
-     `[1] Source Title: https://example.com/article_path`
-     `[2] Source Title: https://example.com/another_path`
+   - Every single source entry MUST follow this EXACT format, including the full `https://` URL:
+     `[1] Source Title: https://exact-url-from-findings.com`
+     `[2] Source Title: https://exact-url-from-findings.com`
 
-4. **Source Fidelity & Constraints**:
-   - Do NOT include citation numbers (e.g., `[1]`) inside Mermaid.js visual diagram blocks.
-   - Reference ONLY sources explicitly present in the `<Findings>` section. Never invent titles or URLs.
+4. **Zero Tolerance For Plain Text Bibliographies**:
+   ❌ REJECTED FORMAT (PLAIN TEXT / NO URL):
+      1. Nature Energy - Interfacial Mechanics (2026)
+      2. QuantumScape Investor Presentation
+
+   ✅ MANDATORY ACCEPTED FORMAT:
+      [1] Nature Energy - Interfacial Mechanics: https://www.nature.com/articles/s41560-023-01312-4
+      [2] QuantumScape Investor Presentation: https://ir.quantumscape.com/news/default.aspx
+
+5. **Negative Constraints & Source Fidelity**:
+   - DO NOT put citation numbers (e.g., `[1]`) inside Mermaid.js visual diagram blocks (it breaks diagram parsing).
+   - Use ONLY real URLs explicitly present in the `<Findings>` section. Never invent or hallucinate URLs or titles.
 </Citation Rules>
 """
 general_assistant_prompt = """You are the conversational interface for Scout, an AI Deep Research System.

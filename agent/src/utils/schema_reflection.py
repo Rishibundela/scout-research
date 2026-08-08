@@ -45,11 +45,11 @@ async def invoke_with_schema_reflection(
 
         except (ValidationError, Exception) as exc:
             logger.warning(
-                f"⚠️ Schema validation failed on attempt {attempt}/{max_reflections} for {pydantic_schema.__name__}: {exc}"
+                f"Schema validation failed on attempt {attempt}/{max_reflections} for {pydantic_schema.__name__}: {exc}"
             )
 
             if attempt == max_reflections:
-                logger.error(f"❌ Max reflections ({max_reflections}) exhausted for {pydantic_schema.__name__}.")
+                logger.error(f"Max reflections ({max_reflections}) exhausted for {pydantic_schema.__name__}.")
                 raise exc
 
             # Construct Reflection Feedback Prompt

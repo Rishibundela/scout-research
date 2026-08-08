@@ -17,7 +17,7 @@ tavily_circuit_breaker = pybreaker.CircuitBreaker(
     name="TavilySearchBreaker"
 )
 
-# ===== 2. HARDENED SEARCH HELPERS =====
+# ===== HARDENED SEARCH HELPERS =====
 
 async def _fetch_single_query(
     query: str, 
@@ -26,30 +26,34 @@ async def _fetch_single_query(
     include_raw_content: bool
 ) -> dict:
     """Fetch search results for a single query with circuit breaker & timeout protection."""
+    
+    # Ensure topic matches Tavily API accepted values ('general' or 'news')
+    tavily_topic = topic if topic in ["general", "news"] else "general"
+
     try:
-        # Wrap search in Circuit Breaker call
+        # Put wait_for INSIDE the breaker call so timeouts trip the circuit breaker
         async def _call_tavily():
-            return await tavily_client.search(
-                query,
-                max_results=max_results,
-                include_raw_content=include_raw_content,
-                topic=topic,
+            return await asyncio.wait_for(
+                tavily_client.search(
+                    query,
+                    max_results=max_results,
+                    include_raw_content=include_raw_content,
+                    topic=tavily_topic,
+                ),
+                timeout=10.0
             )
 
-        # Enforce hard 10-second timeout on single query fetch
-        return await asyncio.wait_for(
-            tavily_circuit_breaker.call_async(_call_tavily),
-            timeout=10.0
-        )
+        # Wrap search in Circuit Breaker call
+        return await tavily_circuit_breaker.call_async(_call_tavily)
 
     except pybreaker.CircuitBreakerError:
         logger.error(f"⚡ Circuit Breaker OPEN: Skipping Tavily call for query '{query}'.")
         return {"results": []}
     except asyncio.TimeoutError:
-        logger.warning(f"⏳ Tavily search timed out for query '{query}'.")
+        logger.warning(f"Tavily search timed out for query '{query}'.")
         return {"results": []}
     except Exception as e:
-        logger.error(f"❌ Error searching query '{query}': {e}")
+        logger.error(f"Error searching query '{query}': {e}")
         return {"results": []}
 
     
@@ -67,12 +71,12 @@ async def tavily_search_multiple(
     search_docs = await asyncio.gather(*tasks)
     return list(search_docs)
 
+
 def deduplicate_search_results(search_results: List[dict]) -> dict:
     """Deduplicate search results by URL."""
     unique_results = {}
 
     for response in search_results:
-        # FIXED: Correct dictionary .get() access
         results_list = response.get('results', [])
         for result in results_list:
             url = result.get('url')

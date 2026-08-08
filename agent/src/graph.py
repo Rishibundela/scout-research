@@ -32,6 +32,7 @@ from agent.src.guardrails.output_guard import (
     sanitize_secrets_and_pii,
     verify_url_grounding,
     validate_report_structure,
+    sanitize_latex_units
 )
 
 logger = logging.getLogger(__name__)
@@ -40,12 +41,15 @@ logger = logging.getLogger(__name__)
 
 primary_writer = init_chat_model(
     model="google_genai:gemini-3.6-flash", 
-    api_key=settings.GOOGLE_API_KEY, 
+    api_key=settings.GOOGLE_API_KEY,
+    temperature=0.0, 
     max_tokens=32000
+    
 )
 backup_writer = init_chat_model(
     model="google_genai:gemini-3.5-flash", 
-    api_key=settings.GOOGLE_API_KEY, 
+    api_key=settings.GOOGLE_API_KEY,
+    temperature=0.0,
     max_tokens=32000
 )
 
@@ -85,7 +89,7 @@ async def final_report_generation(state: AgentState):
 async def output_guardrail_node(state: AgentState) -> dict:
     """
     LangGraph Node: Intercepts synthesized final report, scrubs PII/secrets,
-    verifies URL citation grounding against raw notes, and enforces structure.
+    sanitizes raw LaTeX, verifies URL citation grounding, and enforces structure.
     """
     raw_report = state.get("final_report", "")
     if isinstance(raw_report, list):
@@ -97,10 +101,14 @@ async def output_guardrail_node(state: AgentState) -> dict:
     # Step 1: Scrub accidental API keys / secrets
     clean_report = sanitize_secrets_and_pii(raw_report)
 
-    # Step 2: Grounding check (detect & redact hallucinated URLs)
+    # Step 1.5: Sanitize raw LaTeX units for clean rendering
+    clean_report = sanitize_latex_units(clean_report)
+
+    # Step 2: Grounding check (detect & flag unverified URLs cleanly via canonicalize_url)
     clean_report, hallucinated_count = verify_url_grounding(clean_report, notes)
     if hallucinated_count > 0:
-        logger.info(f"🛡️ Output Guardrail flagged and patched {hallucinated_count} hallucinated citation(s).")
+        # CLEAN LOGGING: Removed emoji for clean backend logs
+        logger.info(f"Output Guardrail flagged and patched {hallucinated_count} unverified citation(s).")
 
     # Step 3: Structural validation
     final_sanitized_report = validate_report_structure(clean_report)
@@ -114,7 +122,7 @@ async def output_guardrail_node(state: AgentState) -> dict:
 
 def handle_main_error(state: AgentState, error: NodeError) -> Command[Literal["__end__"]]:
     """Top-level error safety net for the entire agent system."""
-    logger.error(f"❌ [Main Orchestrator Error] Node '{error.node}' failed: {error.error}")
+    logger.error(f"[Main Orchestrator Error] Node '{error.node}' failed: {error.error}")
     
     notes = state.get("notes", [])
     raw_findings = "\n\n".join(notes) if isinstance(notes, list) else str(notes)

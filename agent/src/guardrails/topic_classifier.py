@@ -57,7 +57,7 @@ async def classify_topic(user_query: str) -> TopicClassification:
         ])
         return response
     except Exception as e:
-        logger.error(f"⚠️ Topic classification failed: {e}. Defaulting to permissive research mode.")
+        logger.error(f"Topic classification failed: {e}. Defaulting to permissive research mode.")
         # Fail-Open / Graceful Fallback: If classifier fails, allow request to proceed to scoping
         return TopicClassification(
             is_safe=True,
