@@ -7,7 +7,8 @@ older historical notes into dense executive summaries when threshold bounds are 
 import logging
 from typing import List, Tuple
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, trim_messages, AIMessage
+from agent.src.state import AgentState
 
 from agent.src.config import settings
 
@@ -91,3 +92,31 @@ async def compact_research_notes(
     except Exception as e:
         logger.error(f"⚠️ Compaction failed: {e}. Falling back to uncompacted notes.")
         return notes
+
+def prepare_compact_thread_context(state: AgentState) -> list:
+    """
+    Trims chat history to prevent token explosion during multi-turn follow-ups,
+    keeping only essential recent exchanges and condensed notes context.
+    """
+    messages = state.get("messages", [])
+    
+    # 1. Trim message history to keep the last ~4,000 tokens of conversation
+    trimmed_history = trim_messages(
+        messages,
+        max_tokens=4000,
+        strategy="last",
+        token_counter=len, # Simple character/token counter fallback
+        start_on="human",
+        include_system=True
+    )
+    
+    # 2. Extract existing accumulated notes summary
+    notes = state.get("notes", [])
+    condensed_notes = "\n".join(notes[-10:]) if isinstance(notes, list) else str(notes)
+    
+    # 3. Inject condensed thread memory as a system message
+    context_summary = SystemMessage(
+        content=f"PREVIOUS SESSION RESEARCH CONTEXT:\nThe following facts were already gathered in this session:\n{condensed_notes}\n\nDo NOT re-research topics covered above unless explicitly instructed."
+    )
+    
+    return [context_summary] + trimmed_history

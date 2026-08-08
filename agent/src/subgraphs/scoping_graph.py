@@ -28,6 +28,7 @@ from agent.src.prompts import (
 from agent.src.state import AgentState, AgentInputState
 from agent.src.utils.helper import get_today_str
 from agent.src.guardrails.input_guard import validate_user_input
+from agent.src.utils.compaction import prepare_compact_thread_context
 
 logger = logging.getLogger(__name__)
 
@@ -83,44 +84,61 @@ def get_reliable_structured_model(pydantic_schema):
 
 async def clarify_with_user(
     state: AgentState,
-) -> Command[Literal["write_research_brief", "__end__"]]:
+) -> Command[Literal["write_research_brief", "general_assistant", "__end__"]]:
     """
-    Determine if the user's request contains sufficient information to proceed with research.
+    Evaluates incoming queries using a multi-stage routing strategy:
+    1. Zero-latency regex safety check (latest message only)
+    2. Topic classification guardrail (harmful vs. chitchat vs. research)
+    3. Context compaction gate (for multi-turn thread memory safety)
+    4. Structured clarification evaluation
+    """
+    messages = state.get("messages", [])
+    if not messages:
+        return Command(goto=END, update={"messages": [AIMessage(content="No input provided.")]})
 
-    Uses structured output to make deterministic decisions and avoid hallucination.
-    Routes to either research brief generation or ends with a clarification question.
-    """
-    # 1. Fast Zero-Latency Regex Guardrail Check
-    user_query = get_buffer_string(state["messages"])
-    is_safe_regex, regex_message = validate_user_input(user_query)
-    
+    # Extract ONLY the latest user message for safety & classification checks
+    latest_user_message = next(
+        (m.content for m in reversed(messages) if isinstance(m, HumanMessage)),
+        ""
+    )
+
+    # 1. Fast Zero-Latency Regex Guardrail Check (Latest Message Only)
+    is_safe_regex, regex_message = validate_user_input(latest_user_message)
     if not is_safe_regex:
-        # Instantly halt and return safety rejection message
-        return Command(goto=END, update={"messages": [AIMessage(content=f"Request Blocked: {regex_message}")]})
-    
-    # 2. Topic Classification Guardrail
-    classification = await classify_topic(user_query)
+        return Command(
+            goto=END, 
+            update={"messages": [AIMessage(content=f"Request Blocked: {regex_message}")]}
+        )
 
-    # Route based on classification
+    # 2. Topic Classification Guardrail (Latest Message Only)
+    classification = await classify_topic(latest_user_message)
+
     if classification.category == "harmful_dangerous":
-        return Command(goto=END, update={"messages": [AIMessage(content=f"Safety Notice: {classification.rejection_reason}")]})
+        return Command(
+            goto=END, 
+            update={"messages": [AIMessage(content=f"Safety Notice: {classification.rejection_reason}")]}
+        )
 
     elif classification.category == "general_chitchat":
-        # Route to general chitchat assistant node
+        # Route directly to general assistant node for greetings/chitchat
         return Command(goto="general_assistant")
-    
+
+    # 3. Apply Context Compaction Gate (Trims history & injects notes summary for multi-turn runs)
+    compact_history = prepare_compact_thread_context(state)
+
+    # 4. Structured Clarification Evaluation
     reliable_model = get_reliable_structured_model(ClarifyWithUser)
 
     prompt = HumanMessage(
         content=clarify_with_user_instructions.format(
-            messages=get_buffer_string(messages=state["messages"]),
+            messages=get_buffer_string(compact_history),
             date=get_today_str(),
         )
     )
 
     response: ClarifyWithUser = await reliable_model.ainvoke([prompt])
 
-    # Route based on clarification need
+    # Route based on clarification outcome
     if response.need_clarification:
         return Command(
             goto=END,
