@@ -35,37 +35,43 @@ def sanitize_secrets_and_pii(text: str) -> str:
     return sanitized_text
 
 
-def verify_url_grounding(report_text: str, accumulated_notes: List[str]) -> Tuple[str, int]:
+def normalize_url(url: str) -> str:
     """
-    Verifies that URLs cited in the final report actually exist in the collected research notes.
-    Replaces hallucinated URLs with a warning flag.
+    Normalizes a URL string by converting to lowercase, removing protocols, 
+    stripping 'www.', and dropping trailing slashes for robust comparison.
     """
-    # Extract all http/https URLs from the report
-    url_pattern = r"https?://[^\s\)\>\]]+"
-    cited_urls = set(re.findall(url_pattern, report_text))
+    if not url:
+        return ""
+    parsed = urlparse(url.lower().strip())
+    # Extract domain and path, stripping www. and trailing slashes
+    domain_and_path = f"{parsed.netloc}{parsed.path}".replace("www.", "").rstrip("/")
+    return domain_and_path
 
-    if not cited_urls:
-        return report_text, 0
-
-    # Combine all notes to check source grounding
-    ground_truth_context = "\n".join(accumulated_notes)
+def verify_url_grounding(report_text: str, notes: list) -> tuple[str, int]:
+    """
+    Cross-references cited URLs in the final report against raw notes,
+    redacting or tagging URLs that do not exist anywhere in the scraped context.
+    """
+    raw_notes_str = "\n".join(notes) if isinstance(notes, list) else str(notes)
     
-    hallucinated_count = 0
-    cleaned_report = report_text
+    # Extract all raw URLs from scraped notes and normalize them
+    raw_urls = re.findall(r'https?://[^\s\)]+', raw_notes_str)
+    normalized_scraped_urls = {normalize_url(u) for u in raw_urls if normalize_url(u)}
 
-    for url in cited_urls:
-        # Clean trailing punctuation from regex capture
-        clean_url = url.rstrip(".,;")
-        if clean_url not in ground_truth_context:
-            hallucinated_count += 1
-            logger.warning(f"⚠️ [Hallucinated Citation Detected]: {clean_url}")
-            # Replace hallucinated URL with warning placeholder
-            cleaned_report = cleaned_report.replace(
-                clean_url, 
-                f"[Unverified Source: {clean_url}]"
-            )
+    # Extract all markdown links in the generated report: [Title](URL)
+    report_urls = re.findall(r'https?://[^\s\)]+', report_text)
+    patched_count = 0
 
-    return cleaned_report, hallucinated_count
+    for cited_url in report_urls:
+        norm_cited = normalize_url(cited_url)
+        
+        # Check if the core domain + path exists in the raw scraped memory
+        if norm_cited and norm_cited not in normalized_scraped_urls:
+            # Only tag as unverified if the URL is completely absent from raw scrapes
+            report_text = report_text.replace(cited_url, f"{cited_url} [Unverified]")
+            patched_count += 1
+
+    return report_text, patched_count
 
 
 def validate_report_structure(report_text: str) -> str:
