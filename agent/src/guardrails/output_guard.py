@@ -20,8 +20,8 @@ SECRET_PATTERNS = [
     (r"(?i)\b(bearer\s+[a-zA-Z0-9\-\._~\+\/]+=*)\b", "[REDACTED_BEARER_TOKEN]"),
     # Private Keys
     (r"-----BEGIN (RSA|EC|PGP|PRIVATE) KEY-----[\s\S]+?-----END \1 KEY-----", "[REDACTED_PRIVATE_KEY]"),
-    # Credit Card Numbers
-    (r"\b(?:\d[ -]*?){13,16}\b", "[REDACTED_CARD_NUMBER]"),
+    # Credit Card Numbers (restricts to common prefixes and avoids DOI/ISBN path segments)
+    (r"(?<![\/\.\d])\b(?:4[0-9]{3}[ -]?[0-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}|5[1-5][0-9]{2}[ -]?[0-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}|6011[ -]?[0-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}|3[47][0-9]{2}[ -]?[0-9]{6}[ -]?[0-9]{5})\b", "[REDACTED_CARD_NUMBER]"),
 ]
 
 
@@ -113,61 +113,154 @@ def canonicalize_url(url: str, keep_scheme: bool = False) -> str:
 
 def verify_url_grounding(report_text: str, notes: list) -> tuple[str, int]:
     """
-    Cross-references cited URLs in the report against raw notes memory.
-    Handles both Markdown links `[Title](URL)` and list links `[1] Title: URL`.
-    Places unverified tags OUTSIDE parentheses so URLs remain 100% clickable.
+    Unified citation engine that:
+    1. Cross-references cited URLs against raw notes memory to verify grounding.
+    2. Deduplicates citations pointing to the same canonical URL.
+    3. Re-numbers body citations and bibliography sequentially starting from 1 with no gaps.
+    4. Ensures consistent *(Unverified Source)* labeling across all citations.
     """
     raw_notes_str = "\n".join(notes) if isinstance(notes, list) else str(notes)
     
-    # Extract raw URLs from notes and canonicalize them into a lookup set
+    # Extract raw URLs from notes and canonicalize them
     raw_urls = re.findall(r'https?://[^\s\)\>\]]+', raw_notes_str)
-    
-    # 📌 LOCATION 1: Canonicalizing scraped notes URLs
     normalized_scraped_urls: Set[str] = {
         canonicalize_url(u, keep_scheme=False) for u in raw_urls if canonicalize_url(u, keep_scheme=False)
     }
 
-    patched_count = 0
-    processed_urls: Set[str] = set()
-
-    # 1. Match Markdown Links: [Link Title](https://...)
-    markdown_link_pattern = r'\[([^\]]+)\]\((https?://[^\s\)]+)\)'
-    markdown_matches = re.findall(markdown_link_pattern, report_text)
-    
-    for title, url in markdown_matches:
-        if url in processed_urls:
-            continue
-            
-        norm_cited = canonicalize_url(url, keep_scheme=False)
+    # Find the sources section
+    split_match = re.search(r"(\n(?:#+\s+)?(?:Sources|References)\b.*)", report_text, re.IGNORECASE | re.DOTALL)
+    if not split_match:
+        return report_text, 0
         
+    sources_section = split_match.group(1)
+    body_text = report_text[:split_match.start()]
+
+    # Parse bibliography line items
+    # Typically: [1] Title: URL or [1] Title - URL or [1] URL
+    lines = sources_section.split("\n")
+    bibliography = []
+    
+    for line in lines:
+        match = re.match(r"^\s*\[(\d+)\]\s+(.+)$", line)
+        if match:
+            num = int(match.group(1))
+            rest = match.group(2).strip()
+            
+            # Find the URL in the line
+            url_match = re.search(r"(https?://[^\s\)\*]+)", rest)
+            if url_match:
+                url = url_match.group(1)
+                # Clean up title by removing the URL and punctuation separators
+                title = rest.replace(url, "").strip()
+                title = re.sub(r"^:\s*|^-\s*|:\s*$|-\s*$|^\"|\"$", "", title).strip()
+                
+                # Check if this URL is verified (grounded in the notes)
+                norm_url = canonicalize_url(url, keep_scheme=False)
+                is_unverified = norm_url not in normalized_scraped_urls
+                
+                bibliography.append({
+                    "original_num": num,
+                    "title": title,
+                    "url": url,
+                    "unverified": is_unverified
+                })
+
+    if not bibliography:
+        return report_text, 0
+
+    # Deduplicate by canonical URL
+    unique_bib = []
+    canonical_seen = {}
+    original_to_unique_idx = {} # maps original_num -> unique_bib list index
+    
+    for entry in bibliography:
+        canon_url = canonicalize_url(entry["url"], keep_scheme=False)
+        if canon_url in canonical_seen:
+            # Map duplicate number to the first occurrence
+            first_idx = canonical_seen[canon_url]
+            original_to_unique_idx[entry["original_num"]] = first_idx
+        else:
+            new_idx = len(unique_bib)
+            canonical_seen[canon_url] = new_idx
+            original_to_unique_idx[entry["original_num"]] = new_idx
+            unique_bib.append(entry)
+
+    # Map original citations in body to their unique bibliography index placeholder
+    def replace_bracket_citation(match):
+        orig_num = int(match.group(1))
+        if orig_num in original_to_unique_idx:
+            idx = original_to_unique_idx[orig_num]
+            return f"__CIT__{idx}__"
+        return match.group(0)
+
+    # Convert all bracket citations in body
+    body_placeholder = re.sub(r"\[(\d+)\]", replace_bracket_citation, body_text)
+
+    # Find unique indices referenced in body
+    used_indices = sorted(list({
+        int(m) for m in re.findall(r"__CIT__(\d+)__", body_placeholder)
+    }))
+
+    # Fallback if none matched
+    if not used_indices:
+        used_indices = list(range(len(unique_bib)))
+
+    # Re-map the used indices to sequential 1-based reference numbers
+    idx_to_new_num = {old_idx: new_num for new_num, old_idx in enumerate(used_indices, 1)}
+
+    # Rewrite bracket citations in body to their new sequential numbers
+    def restore_bracket_citation(match):
+        idx = int(match.group(1))
+        if idx in idx_to_new_num:
+            return f"[{idx_to_new_num[idx]}]"
+        return ""
+
+    body_final = re.sub(r"__CIT__(\d+)__", restore_bracket_citation, body_placeholder)
+
+    # Clean and sort adjacent brackets, e.g. [2][1] -> [1][2]
+    def clean_adjacent_brackets(text):
+        pattern = r"((?:\[\d+\])+)"
+        def repl(match):
+            nums = [int(n) for n in re.findall(r"\d+", match.group(1))]
+            unique_sorted_nums = sorted(list(set(nums)))
+            return "".join(f"[{n}]" for n in unique_sorted_nums)
+        return re.sub(pattern, repl, text)
+
+    body_final = clean_adjacent_brackets(body_final)
+
+    # Also verify any inline markdown links: [Title](URL)
+    markdown_link_pattern = r'\[([^\]]+)\]\((https?://[^\s\)]+)\)'
+    markdown_matches = re.findall(markdown_link_pattern, body_final)
+    for title, url in markdown_matches:
+        norm_cited = canonicalize_url(url, keep_scheme=False)
         if norm_cited and norm_cited not in normalized_scraped_urls:
             original_markdown = f"[{title}]({url})"
-            if f"{original_markdown} *(Unverified Source)*" not in report_text:
+            if f"{original_markdown} *(Unverified Source)*" not in body_final:
                 patched_markdown = f"[{title}]({url}) *(Unverified Source)*"
-                report_text = report_text.replace(original_markdown, patched_markdown)
-                patched_count += 1
-        processed_urls.add(url)
+                body_final = body_final.replace(original_markdown, patched_markdown)
 
-    # 2. Match Line Item Sources: [1] Title: https://...
-    line_item_pattern = r'(\[\d+\]\s+[^:\n]+:\s*)(https?://[^\s]+)'
-    line_matches = re.findall(line_item_pattern, report_text)
-
-    for prefix, url in line_matches:
-        if url in processed_urls:
-            continue
-
+    # Reconstruct ## Sources section
+    new_sources_lines = []
+    heading_match = re.match(r"^(\s*#+\s+(?:Sources|References)\b.*)", split_match.group(1))
+    heading = heading_match.group(1).split("\n")[0] if heading_match else "## Sources"
+    new_sources_lines.append(heading)
+    
+    patched_count = 0
+    for old_idx in used_indices:
+        new_num = idx_to_new_num[old_idx]
+        entry = unique_bib[old_idx]
         
-        norm_cited = canonicalize_url(url, keep_scheme=False)
-        
-        if norm_cited and norm_cited not in normalized_scraped_urls:
-            original_line = f"{prefix}{url}"
-            if "*(Unverified Source)*" not in original_line:
-                patched_line = f"{prefix}{url} *(Unverified Source)*"
-                report_text = report_text.replace(original_line, patched_line)
-                patched_count += 1
-        processed_urls.add(url)
+        unverified_suffix = ""
+        if entry["unverified"]:
+            unverified_suffix = " *(Unverified Source)*"
+            patched_count += 1
+            
+        title_str = f'"{entry["title"]}"' if entry["title"] else f'Source [{new_num}]'
+        line_str = f"[{new_num}] {title_str} - {entry['url']}{unverified_suffix}"
+        new_sources_lines.append(line_str)
 
-    return report_text, patched_count
+    sources_final = "\n" + "\n".join(new_sources_lines) + "\n"
+    return body_final + sources_final, patched_count
 
 
 def validate_report_structure(report_text: str) -> str:

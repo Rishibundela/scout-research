@@ -1,37 +1,79 @@
-# agent_client.py snippet
-import os
-import uuid
+"""Low-level LangGraph SDK wrapper.
+
+This is the only file that talks to `langgraph_sdk` directly. Everything
+above it (research_service, agent_runtime) works with plain Python
+primitives so the rest of the app doesn't need to know SDK version details.
+"""
+from __future__ import annotations
+
+from typing import Any, AsyncGenerator, Dict, Optional
+
 from langgraph_sdk import get_client
 
+from config import settings
 
-class ScoutAgentClient:
 
-    def __init__(self, url: str = None):
-        self.url = url or os.getenv("LANGGRAPH_URL", "http://localhost:8123")
+class LangGraphSDKClient:
+    """Thin wrapper around the LangGraph SDK client, bound to one thread."""
+
+    def __init__(self, url: str = settings.RENDER_URL, api_key: Optional[str] = settings.API_KEY):
+        self.url = url
+        self.api_key = api_key
+        self.client = self._get_client()
 
     def _get_client(self):
-        return get_client(url=self.url)
+        """Creates a fresh SDK client bound to the current running event loop."""
+        return get_client(url=self.url, api_key=self.api_key)
 
-    async def stream_agent_response(
-        self, thread_id: str, message: str, graph_name: str
-    ):
-        client = self._get_client()
-        # Ensure thread exists in backend database
-        await client.threads.create(thread_id=thread_id, if_exists="do_nothing")
+    async def create_thread(self, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return await self.client.threads.create(metadata=metadata or {})
 
-        input_data = {"messages": [{"role": "user", "content": message}]}
+    async def get_thread_state(self, thread_id: str) -> Dict[str, Any]:
+        return await self.client.threads.get_state(thread_id)
 
-        async for event in client.runs.stream(
+    async def delete_thread(self, thread_id: str) -> None:
+        await self.client.threads.delete(thread_id)
+
+    async def search_threads(self, limit: int = 50, metadata: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
+        return await self.client.threads.search(limit=limit, metadata=metadata)
+
+    async def update_thread(self, thread_id: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        return await self.client.threads.update(thread_id, metadata=metadata)
+
+    async def stream_run(
+        self,
+        thread_id: str,
+        assistant_id: Optional[str] = None,
+        input_data: Optional[Dict[str, Any]] = None,
+        command: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[Any, None]:
+        """Streams one run. Tries to include nested subgraph node updates
+        (`stream_subgraphs=True`) so progress from e.g. `supervisor_subgraph`
+        shows up too; falls back gracefully on older SDK versions that don't
+        accept that kwarg.
+        """
+        assistant_id = assistant_id or settings.ASSISTANT_ID
+        base_kwargs = dict(
             thread_id=thread_id,
-            assistant_id=graph_name,
+            assistant_id=assistant_id,
             input=input_data,
-            stream_mode="messages",
-        ):
-            yield event
-
-    async def delete_thread(self, thread_id: str):
-        client = self._get_client()
+            command=command,
+            stream_mode=["updates", "values", "messages"],
+        )
         try:
-            await client.threads.delete(thread_id)
-        except Exception as e:
-            print(f"Error deleting thread {thread_id} on server: {e}")
+            stream = self.client.runs.stream(**base_kwargs, stream_subgraphs=True)
+        except TypeError:
+            stream = self.client.runs.stream(**base_kwargs)
+
+        async for chunk in stream:
+            yield chunk
+
+    async def cancel_run(self, thread_id: str, run_id: str) -> bool:
+        """Best-effort server-side cancellation. Returns False (instead of
+        raising) if the installed SDK version doesn't support it or the run
+        has already finished, so callers can degrade to local-only stop."""
+        try:
+            await self.client.runs.cancel(thread_id, run_id)
+            return True
+        except Exception:
+            return False

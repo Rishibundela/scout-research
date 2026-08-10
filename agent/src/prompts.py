@@ -381,6 +381,12 @@ For each section of the report, do the following:
 - Use bullet points to list out information when appropriate, but by default, write in paragraph form. Use tables for multi-attribute comparisons.
 </Section Guidelines>
 
+<FORMATTING INSTRUCTIONS>
+- Wrap all inline scientific variables, units, and math in single dollar signs. Example: $10^{-3} \text{ S/cm}$ or $E=mc^2$.
+- Wrap all standalone display equations in double dollar signs: $$ \sigma_i \ge 10^{-3} \text{ S/cm} $$
+- For currency or prices, write "USD 75 to 90" or "75-90 USD". Do not use unescaped dollar signs for money.
+</FORMATTING INSTRUCTIONS>
+
 <Fact-Locking & Precision Rules>
 - VERBATIM METRICS: Preserve all specific numbers, percentages, energy densities, patent references, and exact metrics explicitly reported in <Findings>. If findings state "844 Wh/L", write "844 Wh/L" — do NOT round to ">840 Wh/L" or hedge with "approx 800 Wh/L".
 - IMMUTABLE PROPER NOUNS: Keep exact facility names, geographic locations, and internal codenames intact (e.g., preserve "Taoyuan", "Louisville", "WuKong"; never paraphrase or alter proper nouns).
