@@ -12,7 +12,7 @@ import logging
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, get_buffer_string
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, get_buffer_string, BaseMessage, convert_to_messages
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, RetryPolicy, TimeoutPolicy
 from langgraph.errors import NodeError  # FIXED: Added missing import!
@@ -152,14 +152,23 @@ async def clarify_with_user(
 
 async def general_assistant_node(state: AgentState) -> dict:
     """Handles chitchat and general non-research questions fast and cheaply."""
-    user_query = state["messages"][-1].content
-    response = await general_llm.ainvoke([
-        SystemMessage(content=general_assistant_prompt),
-        HumanMessage(content=user_query)
-    ])
+    system_msg = SystemMessage(content=general_assistant_prompt)
+    raw_history = state.get("messages", [])
+    
+    # Safely normalize all message formats (dicts, raw subclasses) using LangChain's helper
+    normalized_messages = convert_to_messages(raw_history)
+    
+    # Filter out system messages to avoid duplication
+    filtered_history = [
+        msg for msg in normalized_messages
+        if not isinstance(msg, SystemMessage)
+    ]
+    
+    full_prompt = [system_msg] + filtered_history
+    response = await general_llm.ainvoke(full_prompt)
     
     return {
-        "messages": [AIMessage(content=response.content)]
+        "messages": [response]
     }
 
 async def write_research_brief(state: AgentState) -> dict:
