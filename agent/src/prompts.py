@@ -382,8 +382,8 @@ For each section of the report, do the following:
 </Section Guidelines>
 
 <FORMATTING INSTRUCTIONS>
-- Wrap all inline scientific variables, units, and math in single dollar signs. Example: $10^{-3} \text{ S/cm}$ or $E=mc^2$.
-- Wrap all standalone display equations in double dollar signs: $$ \sigma_i \ge 10^{-3} \text{ S/cm} $$
+- Wrap all inline scientific variables, units, and math in single dollar signs. Example: $10^{{-3}} \\text{{ S/cm}}$ or $E=mc^2$.
+- Wrap all standalone display equations in double dollar signs: $$ \\sigma_i \\ge 10^{{-3}} \\text{{ S/cm}} $$
 - For currency or prices, write "USD 75 to 90" or "75-90 USD". Do not use unescaped dollar signs for money.
 </FORMATTING INSTRUCTIONS>
 
