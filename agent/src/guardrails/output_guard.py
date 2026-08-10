@@ -79,8 +79,23 @@ def canonicalize_url(url: str, keep_scheme: bool = False) -> str:
     if not url:
         return ""
     try:
-        # Strip stray closing brackets/quotes captured by broad regexes
-        clean_url = url.strip().rstrip(")]>,.'\"")
+        clean_url = url.strip()
+        # Clean trailing punctuation characters step by step from the right
+        while clean_url:
+            last_char = clean_url[-1]
+            if last_char not in ")]>,.'\"":
+                break
+            
+            # Special case for trailing parenthesis: only strip if unmatched
+            if last_char == ')':
+                open_count = clean_url.count('(')
+                close_count = clean_url.count(')')
+                if open_count >= close_count:
+                    # Parentheses are balanced or open count is higher, keep the closing parenthesis
+                    break
+            
+            clean_url = clean_url[:-1]
+
         parsed = urlparse(clean_url.lower())
         
         clean_netloc = parsed.netloc.replace("www.", "")

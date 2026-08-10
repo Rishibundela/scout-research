@@ -406,6 +406,14 @@ graph TD
     C --> D[Anode-Free Assembly]
 </Visual Diagrams (Mermaid.js)>
 
+<Mermaid Formatting Rules>
+1. Always start the block with a valid diagram type on Line 1 (e.g., `flowchart TD`, `sequenceDiagram`, `gantt`).
+2. WRAP ALL LABELS IN DOUBLE QUOTES: Always write `NodeID["Clean Text Here"]`.
+3. NO SPECIAL CHARACTERS IN LABELS: Remove parentheses (), backticks (`), slashes (/), and dollar signs ($) from label text.
+4. NO RESERVED KEYWORDS: Never name a node ID "end", "graph", "subgraph", or "style". Use descriptive IDs like `step_end["End Process"]`.
+5. NO MARKDOWN IN LABELS: Do not place bold (`**`), italics (`*`), or URLs inside node text.
+</Mermaid Formatting Rules>
+
 <Citation Rules>
 CRITICAL MANDATE: CITATIONS ARE NON-NEGOTIABLE. EVERY SINGLE FACT, METRIC, DATE, CODENAME, AND CLAIM MUST BE INLINE CITED WITH BRACKETS [1], [2] MATCHING A VALID LINK IN THE ## SOURCES SECTION. REPORTS WITHOUT INLINE BRACKET CITATIONS ARE INCOMPLETE SYSTEM FAILURES.
 

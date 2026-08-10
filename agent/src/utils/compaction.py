@@ -5,6 +5,7 @@ older historical notes into dense executive summaries when threshold bounds are 
 """
 
 import logging
+import re
 from typing import List, Tuple
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage, trim_messages, AIMessage
@@ -34,9 +35,27 @@ CRITICAL CONSTRAINTS:
 
 
 def estimate_token_count(text_list: List[str]) -> int:
-    """Fast character-based heuristic token estimator (~4 chars per token)."""
-    total_chars = sum(len(item) for item in text_list)
-    return total_chars // 4
+    """
+    A robust offline token estimator calibrated for a mix of English prose,
+    JSON payloads, and source code.
+    - Standard alphanumeric words: ~4 characters per token
+    - Individual punctuation symbols: 1 token each
+    - Whitespace (newlines/tabs): 1 token per sequence
+    """
+    total_tokens = 0
+    for text in text_list:
+        if not text:
+            continue
+        # Count formatting/code symbols
+        symbols = sum(1 for char in text if char in "{}[]():;.,=+-*/%&|^~<>!?\"'")
+        # Count newlines and carriage returns
+        newlines = text.count('\n') + text.count('\r')
+        # Filter alphanumeric chunks to count standard words
+        words = re.findall(r'[a-zA-Z0-9]+', text)
+        word_tokens = sum(max(1, len(w) // 4) for w in words)
+        
+        total_tokens += symbols + newlines + word_tokens
+    return total_tokens
 
 
 async def compact_research_notes(

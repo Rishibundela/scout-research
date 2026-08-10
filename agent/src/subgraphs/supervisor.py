@@ -154,20 +154,22 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
 
             # 4. Handle ConductResearch calls with parallel subagents
             if conduct_research_calls:
+                semaphore = asyncio.Semaphore(max_concurrent_researchers)
                 async def safe_run_subagent(tool_call):
-                    topic = tool_call["args"].get("research_topic", "General Research")
-                    try:
-                        result = await researcher_agent.ainvoke({
-                            "researcher_messages": [HumanMessage(content=topic)],
-                            "research_topic": topic
-                        })
-                        return result
-                    except Exception as e:
-                        logger.error(f"Sub-agent failed for topic '{topic}': {e}")
-                        return {
-                            "compressed_research": f"Sub-agent research failed for topic '{topic}': {str(e)}",
-                            "raw_notes": []
-                        }
+                    async with semaphore:
+                        topic = tool_call["args"].get("research_topic", "General Research")
+                        try:
+                            result = await researcher_agent.ainvoke({
+                                "researcher_messages": [HumanMessage(content=topic)],
+                                "research_topic": topic
+                            })
+                            return result
+                        except Exception as e:
+                            logger.error(f"Sub-agent failed for topic '{topic}': {e}")
+                            return {
+                                "compressed_research": f"Sub-agent research failed for topic '{topic}': {str(e)}",
+                                "raw_notes": []
+                            }
 
                 coros = [safe_run_subagent(tc) for tc in conduct_research_calls]
                 tool_results = await asyncio.gather(*coros)

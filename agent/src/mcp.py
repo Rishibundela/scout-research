@@ -50,3 +50,7 @@ async def get_mcp_tools() -> list:
             f"Failed to connect to MCP server or load tools: {e}. Proceeding without MCP tools."
         )
         return []
+
+def is_mcp_tools_loaded() -> bool:
+    """Check if MCP tools have been successfully fetched and cached."""
+    return _cached_mcp_tools is not None

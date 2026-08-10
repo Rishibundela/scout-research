@@ -1,5 +1,6 @@
 from typing import Annotated, Literal
 from langchain_core.tools import tool, InjectedToolArg
+from langchain_core.runnables import RunnableConfig
 from agent.src.utils.search import tavily_search_multiple, deduplicate_search_results
 from agent.src.core.research import process_search_results, format_search_output
 
@@ -8,6 +9,7 @@ async def tavily_search(
     query: str,
     max_results: int = 3,
     topic: Literal["general", "news", "finance"] = "general",
+    config: RunnableConfig = None
 ) -> str:
     """Fetch results from Tavily search API with content summarization.
 
@@ -19,11 +21,15 @@ async def tavily_search(
     Returns:
         Formatted string of search results with summaries
     """
+    configurable = config.get("configurable", {}) if config else {}
+    thread_id = configurable.get("thread_id", "global")
+
     search_results = await tavily_search_multiple(
         [query],
         max_results=max_results,
         topic=topic,
         include_raw_content=True,
+        thread_id=thread_id
     )
 
     unique_results = deduplicate_search_results(search_results)
