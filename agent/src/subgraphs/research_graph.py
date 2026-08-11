@@ -78,13 +78,8 @@ async def llm_call(state: ResearcherState, config: RunnableConfig) -> dict:
     tools = await get_all_tools()
     model_with_tools = get_reliable_model(tools=tools)
 
-    thread_id = config.get("configurable", {}).get("thread_id") if config else None
-    local_info = ""
-    if thread_id:
-        local_info = f"\n\nIf the user asks about local documents, files, or reference material, check the folder named '{thread_id}' inside the directory. You can list its contents using the list_directory tool with the path '{thread_id}' and read the files using read_file."
-
     response = await model_with_tools.ainvoke(
-        [SystemMessage(content=research_agent_prompt + local_info)] + state["researcher_messages"],
+        [SystemMessage(content=research_agent_prompt)] + state["researcher_messages"],
         config=config
     )
     return {"researcher_messages": [response]}

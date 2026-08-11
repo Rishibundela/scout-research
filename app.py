@@ -279,56 +279,6 @@ def render_sidebar(thread_id: str) -> None:
                 if cols[1].button("🗑️", key=f"del_{s['thread_id']}", help="Delete this chat"):
                     delete_chat(s["thread_id"])
 
-        # Reference Documents (MCP Filesystem) manager
-        from pathlib import Path
-        
-        # Isolate uploaded files to a subfolder named after the active thread_id
-        if thread_id:
-            st.divider()
-            with st.expander("📂 Reference Documents (MCP)", expanded=False):
-                st.markdown(
-                    "<small>Upload local files (PDF, CSV, TXT) for the agent to inspect during research.</small>", 
-                    unsafe_allow_html=True
-                )
-                
-                files_dir = Path("files") / thread_id
-                files_dir.mkdir(parents=True, exist_ok=True)
-                
-                uploaded_files = st.file_uploader(
-                    "Upload reference files",
-                    accept_multiple_files=True,
-                    label_visibility="collapsed",
-                    key=f"mcp_upload_{thread_id}"
-                )
-                
-                if uploaded_files:
-                    for f in uploaded_files:
-                        target_path = files_dir / f.name
-                        if not target_path.exists():
-                            try:
-                                with open(target_path, "wb") as out_f:
-                                    out_f.write(f.getbuffer())
-                                st.toast(f"Uploaded {f.name}", icon="✅")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error saving {f.name}: {e}")
-                
-                # List current files in the thread's isolated directory
-                local_files = [x for x in files_dir.iterdir() if x.is_file()]
-                if not local_files:
-                    st.caption("No reference documents uploaded.")
-                else:
-                    for file_path in local_files:
-                        f_cols = st.columns([4, 1])
-                        f_cols[0].markdown(f"<small>📄 {file_path.name}</small>", unsafe_allow_html=True)
-                        if f_cols[1].button("🗑️", key=f"del_file_{thread_id}_{file_path.name}", help=f"Delete {file_path.name}"):
-                            try:
-                                file_path.unlink()
-                                st.toast(f"Deleted {file_path.name}", icon="🗑️")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed deleting {file_path.name}: {e}")
-
         st.divider()
         with st.expander("⚙️ Session details"):
             st.markdown(f"**Assistant:** `{settings.ASSISTANT_ID}`")
