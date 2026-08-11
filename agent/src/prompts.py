@@ -418,6 +418,7 @@ graph TD
 3. NO SPECIAL CHARACTERS IN LABELS: Remove parentheses (), backticks (`), slashes (/), and dollar signs ($) from label text.
 4. NO RESERVED KEYWORDS: Never name a node ID "end", "graph", "subgraph", or "style". Use descriptive IDs like `step_end["End Process"]`.
 5. NO MARKDOWN IN LABELS: Do not place bold (`**`), italics (`*`), or URLs inside node text.
+6. NO EXPERIMENTAL DIAGRAM TYPES: Never use experimental or beta diagram definitions like 'architecture-beta'. Use standard 'flowchart TD', 'graph TD', 'sequenceDiagram', or 'gantt' for all visualizations.
 </Mermaid Formatting Rules>
 
 <Citation Rules>

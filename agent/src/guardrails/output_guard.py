@@ -285,6 +285,14 @@ def validate_report_structure(report_text: str) -> str:
     # 2. Auto-heal Mermaid Code Blocks
     def heal_mermaid_block(match: re.Match) -> str:
         content = match.group(1)
+        # Translate experimental architecture-beta to standard flowchart TD
+        if "architecture-beta" in content:
+            content = content.replace("architecture-beta", "flowchart TD")
+            content = re.sub(r'group\s+([a-zA-Z0-9_\-]+)\s*\["([^"]+)"\]', r'subgraph \1["\2"]\nend', content)
+            content = re.sub(r'group\s+([a-zA-Z0-9_\-]+)\s*\[([^\]]+)\]', r'subgraph \1["\2"]\nend', content)
+            content = re.sub(r'service\s+([a-zA-Z0-9_\-]+)\s*\["([^"]+)"\]', r'\1["\2"]', content)
+            content = re.sub(r'service\s+([a-zA-Z0-9_\-]+)\s*\[([^\]]+)\]', r'\1["\2"]', content)
+            
         lines = content.split("\n")
         
         # Valid diagram type declarations

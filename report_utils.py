@@ -102,13 +102,15 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     const processedParagraphs = paragraphs.map((p) => {
       // Extract display math ($$ ... $$)
       let processed = p.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (m, code) => {
-        const idx = displayMath.push(code) - 1;
+        const cleanCode = code.replace(/\\+mum\b/g, '\\mu\\text{m}');
+        const idx = displayMath.push(cleanCode) - 1;
         return '<div class="display-math-placeholder" data-idx="' + idx + '"></div>';
       });
 
       // Extract inline math ($ ... $) with max 150 chars limit and no outer spaces
       processed = processed.replace(/\$([^\s\$](?:[^\$]{0,150}?[^\s\$])?)\$/g, (m, code) => {
-        const idx = inlineMath.push(code) - 1;
+        const cleanCode = code.replace(/\\+mum\b/g, '\\mu\\text{m}');
+        const idx = inlineMath.push(cleanCode) - 1;
         return '<span class="inline-math-placeholder" data-idx="' + idx + '"></span>';
       });
 
@@ -226,8 +228,11 @@ def get_math_png_data_uri(latex_code: str) -> Optional[str]:
     and a custom User-Agent header.
     """
     import base64
+    import re
+    # Clean up common model LaTeX typos like \mum or \\mum
+    clean_latex = re.sub(r"\\+mum\b", r"\\mu\\text{m}", latex_code)
     # URL encode the latex formula
-    encoded_latex = urllib.parse.quote(latex_code.strip())
+    encoded_latex = urllib.parse.quote(clean_latex.strip())
     img_url = f"https://latex.codecogs.com/png.image?\\dpi{{150}}\\bg{{white}}{encoded_latex}"
     try:
         ctx = ssl.create_default_context()
