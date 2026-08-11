@@ -77,13 +77,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div id="err-banner"></div>
 <div id="content"></div>
 <script>
-  function decodeBase64(b64) {
-    return decodeURIComponent(atob(b64).split('').map(function(c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-  }
-
-  const raw = decodeBase64("__BASE64_MD__");
+  const raw = __RAW_MD_JSON__;
   const container = document.getElementById('content');
   const errBanner = document.getElementById('err-banner');
 
@@ -185,9 +179,11 @@ def build_report_html(markdown_text: str, height: int = 720) -> str:
     safe = markdown_text if isinstance(markdown_text, str) and markdown_text.strip() else "*No content.*"
     if isinstance(safe, str):
         safe = safe.replace("\r\n", "\n")
-    import base64
-    b64_str = base64.b64encode(safe.encode("utf-8")).decode("utf-8")
-    return _HTML_TEMPLATE.replace("__BASE64_MD__", b64_str)
+    import re
+    json_str = json.dumps(safe)
+    # Case-insensitive script tag escaping
+    json_str = re.sub(r'</script>', r'<\/script>', json_str, flags=re.IGNORECASE)
+    return _HTML_TEMPLATE.replace("__RAW_MD_JSON__", json_str)
 
 
 def export_markdown(markdown_text: str) -> bytes:
