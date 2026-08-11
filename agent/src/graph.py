@@ -17,6 +17,7 @@ import logging
 from typing_extensions import Literal
 
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, RetryPolicy, TimeoutPolicy
 from langgraph.errors import NodeError
@@ -61,7 +62,7 @@ reliable_writer_model = (
 
 # ===== FINAL REPORT GENERATION =====
 
-async def final_report_generation(state: AgentState):
+async def final_report_generation(state: AgentState, config: RunnableConfig):
     """
     Final report generation node.
 
@@ -78,7 +79,7 @@ async def final_report_generation(state: AgentState):
         date=get_today_str()
     )
 
-    final_report = await reliable_writer_model.ainvoke([HumanMessage(content=final_report_prompt)])
+    final_report = await reliable_writer_model.ainvoke([HumanMessage(content=final_report_prompt)], config=config)
     report_text = extract_text_content(final_report.content)
 
     return {

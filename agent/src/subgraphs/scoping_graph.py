@@ -13,6 +13,7 @@ from typing import Literal
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, get_buffer_string, BaseMessage, convert_to_messages
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, RetryPolicy, TimeoutPolicy
 from langgraph.errors import NodeError  # FIXED: Added missing import!
@@ -84,6 +85,7 @@ def get_reliable_structured_model(pydantic_schema):
 
 async def clarify_with_user(
     state: AgentState,
+    config: RunnableConfig,
 ) -> Command[Literal["write_research_brief", "general_assistant", "__end__"]]:
     """
     Evaluates incoming queries using a multi-stage routing strategy:
@@ -136,7 +138,7 @@ async def clarify_with_user(
         )
     )
 
-    response: ClarifyWithUser = await reliable_model.ainvoke([prompt])
+    response: ClarifyWithUser = await reliable_model.ainvoke([prompt], config=config)
 
     # Route based on clarification outcome
     if response.need_clarification:
@@ -150,7 +152,7 @@ async def clarify_with_user(
             update={"messages": [AIMessage(content=response.verification)]},
         )
 
-async def general_assistant_node(state: AgentState) -> dict:
+async def general_assistant_node(state: AgentState, config: RunnableConfig) -> dict:
     """Handles chitchat and general non-research questions fast and cheaply."""
     system_msg = SystemMessage(content=general_assistant_prompt)
     raw_history = state.get("messages", [])
@@ -165,13 +167,13 @@ async def general_assistant_node(state: AgentState) -> dict:
     ]
     
     full_prompt = [system_msg] + filtered_history
-    response = await general_llm.ainvoke(full_prompt)
+    response = await general_llm.ainvoke(full_prompt, config=config)
     
     return {
         "messages": [response]
     }
 
-async def write_research_brief(state: AgentState) -> dict:
+async def write_research_brief(state: AgentState, config: RunnableConfig) -> dict:
     """
     Transform the conversation history into a comprehensive research brief.
 
@@ -186,7 +188,7 @@ async def write_research_brief(state: AgentState) -> dict:
             date=get_today_str(),
         )
     )
-    response: ResearchQuestion = await reliable_model.ainvoke([prompt])
+    response: ResearchQuestion = await reliable_model.ainvoke([prompt], config=config)
 
     return {
         "research_brief": response.research_brief,

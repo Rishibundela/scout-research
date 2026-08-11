@@ -1,241 +1,100 @@
-# 🔬 Scout — Autonomous Multi-Agent Deep Research System
+# 🔍 Scout: Autonomous Deep Research Engine
 
 **Scout** is a production-grade, fault-tolerant **Autonomous Deep Research Engine** engineered as a distributed, multi-agent system. Built using **LangGraph**, **Gemini**, and **Docker**, Scout orchestrates parallel research sub-agents, manages persistent PostgreSQL state checkpoints, enforces multi-tier security perimeters, and optimizes token economics across long-running research sessions.
 
 ---
 
-## 🏛️ System Architecture
+## 🌟 Key Features
 
-```text
-                               ┌───────────────────────────────┐
-                               │   Incoming User Prompt / UI   │
-                               └───────────────┬───────────────┘
-                                               │
-                                               ▼
-                               ┌───────────────────────────────┐
-                               │   Tier 1: Regex Guardrail     │ (<1ms Firewall)
-                               └───────────────┬───────────────┘
-                                               │
-                                               ▼
-                               ┌───────────────────────────────┐
-                               │ Tier 2: Topic Classifier Node │ (~200ms Router)
-                               └───────────────┬───────────────┘
-                                               │
-               ┌───────────────────────────────┼───────────────────────────────┐
-               │                               │                               │
-    (harmful_dangerous)             (general_chitchat)                 (valid_research)
-               │                               │                               │
-               ▼                               ▼                               ▼
-      [ Safety Block ]              [ General Assistant ]           [ Research Scoping ]
-       (Returns Error)               (Direct Answer Node)          (Generates Research Brief)
-                                               │                               │
-                                               ▼                               ▼
-                                            [ END ]                 [ Supervisor Subgraph ]
-                                                                               │
-                                                               ┌───────────────┼───────────────┐
-                                                               │               │               │
-                                                               ▼               ▼               ▼
-                                                           [Sub-Agent 1]  [Sub-Agent 2]  [Sub-Agent 3]
-                                                           (Tavily Search + Web Scraper)
-                                                               │               │               │
-                                                               └───────────────┼───────────────┘
-                                                                               │
-                                                                               ▼
-                                                                   [ Context Compaction Gate ]
-                                                                   (Cap at <10k Tokens)
-                                                                               │
-                                                                               ▼
-                                                                   [ Final Report Synthesizer ]
-                                                                               │
-                                                                               ▼
-                                                                   [ Output Guardrail Node ]
-                                                                   (PII/Secrets Scrub + Links Verification)
-                                                                               │
-                                                                               ▼
-                                                                            [ END ]
+*   💾 **100% Session Crash Recovery:** Database-driven thread checkpointing via Supabase PostgreSQL guarantees zero lost progress on server restarts, page refreshes, or dropped connections.
+*   📊 **High-Fidelity PDF Math & Chemistry Compiler:** Compiles LaTeX equations ($E=mc^2$), scientific matrices, and complex chemical structures ($\text{Li}_6\text{PS}_5\text{Cl}$) into static vector PNGs (via CodeCogs) and embeds them directly inside exported PDFs.
+*   📐 **Static Vector Diagrams in PDF:** Automatically renders complex Mermaid.js structural flowcharts, gantt timelines, and sequence charts into static base64 URIs (via `mermaid.ink`) for offline PDF layout compatibility.
+*   🔗 **Academic-Grade Citation Deduplicator:** Parses and merges duplicate bibliography links, sequentially re-numbers body citations starting from `[1]` with no gaps, and verifies grounding against raw scraped notes to flag unverified sources.
+*   🛡️ **Smart PII & DOI-Aware Redaction:** Scrubs credit card numbers and sensitive keys using issuer-restricted patterns while safely ignoring DOIs, ISBNs, and numeric URL segments.
+*   🔀 **State Preservation on Page Reload:** Streamlit session states are dynamically synchronized with URL query parameters (`st.query_params`), allowing active threads to reload instantly when refreshing the browser.
+
+---
+
+## 🏗️ Architecture & Component Map
+
+The project is structured in a modular, decoupled layout separating the frontend visualization from the agent runtime:
 
 ```
-
----
-
-## 📊 Key Architectural Metrics
-
-* ⚡ **$< 1\text{ms}$ Security Filtering:** Zero-latency Regex guardrail intercepts control injection attempts before any LLM API call is triggered.
-* ⚡ **$\sim 200\text{ms}$ Short-Circuit Routing:** Non-research prompts and casual chitchat are resolved instantly via a Flash-Lite Topic Classifier, saving search credits and compute.
-* 🚀 **$2.5\times$ Speedup via Parallelism:** Supervisor-worker architecture executes up to 3 concurrent researchers (`asyncio.gather`), cutting execution time by over $60\%$.
-* 📉 **$> 60\%$ Token Overhead Reduction:** Context Compaction Gate dynamically condenses historical notes whenever state exceeds $10,000$ tokens, eliminating "Lost in the Middle" attention decay.
-* 💾 **$100\%$ Session Crash Recovery:** Atomic PostgreSQL state checkpointing at every superstep boundary guarantees zero lost progress on server restarts.
-* 🛡️ **$100\%$ Citation Verification:** Output Guardrail cross-checks cited URLs against raw scraped notes to redact $100\%$ of hallucinated source links.
-
----
-
-## 🛠️ Key Features & Engineering Highlights
-
-### 1. Multi-Agent Supervisor Orchestration
-
-* **Supervisor-Worker Pattern:** Breaks down a single research brief into distinct sub-topics and assigns them to parallel sub-agents.
-* **Fault-Isolated Async Execution:** Uses custom `safe_run_subagent` wrappers around `asyncio.gather`. A failure in 1 worker never causes cascading failures across remaining sub-agents.
-
-### 2. Multi-Tier Security & Guardrails
-
-* **Tier 1 & 2 Guardrails:** Zero-latency regex firewall combined with a Gemini Flash-Lite boundary classifier.
-* **Indirect Prompt Injection Defense:** Wraps untrusted web scrapes inside `<untrusted_source_content>` XML boundary tags to isolate data from system instructions.
-* **Output Guardrail:** Scrubs API keys/PII using regex and validates cited URLs against raw notes to strip hallucinated links.
-
-### 3. Production Resilience & Circuit Breakers
-
-* **Circuit Breakers:** `pybreaker` integration prevents cascading API lockouts during search provider downtime.
-* **Model Fallbacks:** Automatic fallback chain from primary models (`gemini-2.0-flash`) to backup models (`gemini-1.5-pro`) upon rate-limits or API errors.
-
-### 4. Stateful Persistence & Crash Recovery
-
-* **Superstep Checkpointing:** Integrates `AsyncPostgresSaver` with Render PostgreSQL. Every graph state change is saved atomically.
-* **Resume-on-Crash:** Interrupted or crashed runs can be resumed seamlessly using `input: null` on the same `thread_id`.
-
----
-
-## 📂 Repository Structure
-
-```text
-scout-research/
-├── Dockerfile                        # Multi-stage Docker build for LangGraph Server
-├── langgraph.json                    # LangGraph Server configuration mapping
-├── pyproject.toml                    # Package configuration and dependencies
-├── run_research.py                   # CLI entry point for headless execution
+├── app.py                      # Streamlit UI & frontend page
+├── report_utils.py             # Browser renderer & static PDF compilation engine
+├── repository.py               # Supabase database session repo
+├── research_service.py         # Middle-tier business logic controller
+├── agent_client.py             # LangGraph SDK client API wrapper
+├── docker-compose.yml          # Container configuration (PostgreSQL, Redis, LangGraph API)
 │
-├── agent/                            # Core Python Agent Package
+├── agent/
 │   ├── src/
-│   │   ├── checkpoint.py             # Async Postgres & SQLite checkpointer manager
-│   │   ├── client.py                 # High-level Python SDK client (`langgraph-sdk`)
-│   │   ├── config.py                 # Pydantic Settings management
-│   │   ├── main.py                   # Top-level orchestrator graph compilation
-│   │   ├── schemas.py                # Pydantic schemas (ResearchQuestion, Summary, etc.)
-│   │   ├── state.py                  # LangGraph state definitions & `deduplicate_list` reducers
-│   │   ├── tools.py                  # Hardened Tavily search with circuit breakers & timeouts
+│   │   ├── graph.py            # Primary state machine compilation
+│   │   ├── state.py            # TypedDict state schemas and deduplicating reducers
+│   │   ├── prompts.py          # Scoping and report-writing prompt templates
 │   │   │
-│   │   ├── guardrails/               # Security & Validation Perimeter
-│   │   │   ├── input_guard.py        # <1ms regex prompt injection filter
-│   │   │   ├── topic_classifier.py    # Gemini Flash-Lite topic router
-│   │   │   └── output_guard.py       # PII/Secrets scrubber & URL verifier
+│   │   ├── subgraphs/
+│   │   │   ├── scoping_graph.py  # User clarification gate & chitchat assistant
+│   │   │   ├── supervisor.py     # Task delegator and parallel research executioner
+│   │   │   └── research_graph.py   # Subagent web scraper & fact-summarizer
 │   │   │
-│   │   ├── subgraphs/                # Modular LangGraph Sub-workflows
-│   │   │   ├── scoping_graph.py      # Clarification & brief generation workflow
-│   │   │   ├── research_graph.py     # ReAct research sub-agent
-│   │   │   └── supervisor.py         # Multi-agent supervisor with parallel execution
-│   │   │
-│   │   └── utils/                    # Utility Engines
-│   │       ├── compaction.py         # Context Compaction Gate engine
-│   │       └── schema_reflection.py  # Pydantic schema enforcement with reflection loops
+│   │   └── guardrails/
+│   │       ├── output_guard.py   # Citation deduplicator, PII filter, & LaTeX cleaner
+│   │       └── topic_classifier.py # Safety category routing
+│   │
+│   └── DOCKERFILE              # LangGraph API service build blueprint
 │
-└── frontend/                         # Streamlit UI Dashboard
-    └── app.py                        # Streamlit app with SSE live streaming & crash recovery
-
+└── tests/                      # Full pytest coverage suite
 ```
 
 ---
 
-## 🚀 Quick Start & Local Setup
+## 🛠️ Installation & Setup
 
-### Prerequisites
+### 1. Prerequisites
+Ensure you have **Python 3.11+**, **Docker**, and **uv** installed on your system.
 
-* Python 3.11+
-* Docker Desktop
-* Google Gemini API Key
-* Tavily Search API Key
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/your-username/scout-research.git
-cd scout-research
-
-```
-
-### 2. Configure Environment Variables
-
-Copy `.env.example` to `.env` and fill in your keys:
-
-```bash
-cp .env.example .env
-
-```
-
+### 2. Environment Configuration
+Create a `.env` file in the root directory:
 ```env
-GOOGLE_API_KEY="your-google-gemini-key"
-TAVILY_API_KEY="your-tavily-api-key"
-DATABASE_URL="postgresql://user:password@localhost:5432/scout_db"
-
+GOOGLE_API_KEY=your_gemini_api_key
+LANGSMITH_API_KEY=your_optional_langsmith_key
+DEFAULT_USER_ID=default_user
 ```
 
-### 3. Run Locally with LangGraph CLI
-
+### 3. Launching Containers (Database & Agent API)
+Scout runs on top of a local Supabase PostgreSQL image for state checkpointing and Redis for caching. Start the services using Docker:
 ```bash
-pip install -e .
-langgraph dev
-
+docker compose up -d --build
 ```
+This initializes:
+*   **PostgreSQL (Port 5432):** Supabase database instance holding threads, checkpoints, and cron runs.
+*   **Redis (Port 6379):** Event store.
+*   **LangGraph API (Port 8123):** Asynchronous agent executor.
 
-The server will start at `http://localhost:8000` with interactive Swagger docs at `http://localhost:8000/docs`.
-
-### 4. Launch Streamlit Frontend
-
-In a separate terminal:
-
+### 4. Running the Streamlit App
+Install local Python dependencies and launch the frontend:
 ```bash
-streamlit run frontend/app.py
+uv pip install -r pyproject.toml
+streamlit run app.py
+```
+Open `http://localhost:8501` in your browser.
 
+---
+
+## 🧪 Running the Test Suite
+Scout comes with automated integration tests covering the API client, research service logic, and guardrails.
+
+To run the test suite:
+```bash
+uv run pytest
 ```
 
 ---
 
-## 🐳 Docker & Render Deployment
-
-This project is optimized for deployment on **Render** using the official **LangGraph Server Docker Base Image**.
-
-### Build Docker Image Locally
-
-```bash
-docker build -t scout-research:latest .
-docker run -p 8000:8000 --env-file .env scout-research:latest
-
-```
-
-### Deploying to Render
-
-1. Create a **Render PostgreSQL** instance and copy the internal connection URL.
-2. Deploy a new **Render Web Service** pointing to this repository (`Dockerfile`).
-3. Set environment variables in Render Dashboard:
-* `POSTGRES_URI`: `<Your Internal Postgres Render URL>`
-* `GOOGLE_API_KEY`: `<Your API Gemini Key>`
-* `TAVILY_API_KEY`: `<Your API Key Tavily>`
-
-
-
----
-
-## 🧪 REST API Usage Example
-
-### Create a Stateful Thread
-
-```bash
-curl -X POST "https://your-app.onrender.com/threads" \
-     -H "Content-Type: application/json"
-
-```
-
-### Stream Execution (SSE)
-
-```bash
-curl -X POST "https://your-app.onrender.com/threads/<THREAD_ID>/runs/stream" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "assistant_id": "agent",
-       "input": {
-         "messages": [
-           {"role": "user", "content": "Analyze recent advancements in solid-state batteries."}
-         ]
-       },
-       "stream_mode": "updates"
-     }'
-
-```
+## 🛡️ Database Schema (Supabase)
+Thread checkpoints and sessions reside in the public schema of the `langgraph` database:
+*   `public.thread`: Holds thread metadata (including `user_id` inside JSONB), current states, and config.
+*   `public.checkpoints`: Holds historical state checkpoints allowing rollback and step resumes.
+*   `public.run`: Tracks execution runs and LangSmith session associations.
+*   `public.cron`: Handles scheduled recurring tasks.
