@@ -15,7 +15,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, get_buffer_string, BaseMessage, convert_to_messages
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import Command, RetryPolicy, TimeoutPolicy
+from langgraph.types import Command, RetryPolicy, TimeoutPolicy, interrupt
 from langgraph.errors import NodeError  # FIXED: Added missing import!
 
 from agent.src.config import settings
@@ -94,17 +94,20 @@ async def clarify_with_user(
     3. Context compaction gate (for multi-turn thread memory safety)
     4. Structured clarification evaluation
     """
-    messages = state.get("messages", [])
-    if not messages:
+    raw_messages = state.get("messages", [])
+    if not raw_messages:
         return Command(goto=END, update={"messages": [AIMessage(content="No input provided.")]})
 
-    # Extract ONLY the latest user message for safety & classification checks
+    # 🔑 FIX 1: Safely normalize history so dicts & objects are treated as valid BaseMessages
+    messages = convert_to_messages(raw_messages)
+
+    # Extract ONLY the latest user message text for safety & classification
     latest_user_message = next(
-        (m.content for m in reversed(messages) if isinstance(m, HumanMessage)),
+        (m.content for m in reversed(messages) if isinstance(m, HumanMessage) and isinstance(m.content, str)),
         ""
     )
 
-    # 1. Fast Zero-Latency Regex Guardrail Check (Latest Message Only)
+    # 1. Fast Zero-Latency Regex Guardrail Check
     is_safe_regex, regex_message = validate_user_input(latest_user_message)
     if not is_safe_regex:
         return Command(
@@ -112,7 +115,7 @@ async def clarify_with_user(
             update={"messages": [AIMessage(content=f"Request Blocked: {regex_message}")]}
         )
 
-    # 2. Topic Classification Guardrail (Latest Message Only)
+    # 2. Topic Classification Guardrail
     classification = await classify_topic(latest_user_message)
 
     if classification.category == "harmful_dangerous":
@@ -121,30 +124,54 @@ async def clarify_with_user(
             update={"messages": [AIMessage(content=f"Safety Notice: {classification.rejection_reason}")]}
         )
 
-    elif classification.category == "general_chitchat":
-        # Route directly to general assistant node for greetings/chitchat
+    # 🔑 FIX 3: Only route to general_assistant if this is a fresh turn/chitchat
+    # (prevents mid-research follow-up answers from triggering the chitchat bot)
+    elif classification.category == "general_chitchat" and len(messages) <= 2:
         return Command(goto="general_assistant")
 
-    # 3. Apply Context Compaction Gate (Trims history & injects notes summary for multi-turn runs)
+    # 3. Apply Context Compaction Gate (Trims history & injects notes summary)
     compact_history = prepare_compact_thread_context(state)
 
     # 4. Structured Clarification Evaluation
     reliable_model = get_reliable_structured_model(ClarifyWithUser)
 
-    prompt = HumanMessage(
-        content=clarify_with_user_instructions.format(
+    # 🔑 FIX 2: Safe string formatting prevention against KeyError: '-3'
+    try:
+        formatted_prompt_text = clarify_with_user_instructions.format(
             messages=get_buffer_string(compact_history),
             date=get_today_str(),
         )
-    )
+    except KeyError:
+        # Fallback if unescaped braces exist in prompt string
+        formatted_prompt_text = (
+            f"{clarify_with_user_instructions}\n\n"
+            f"Today's Date: {get_today_str()}\n"
+            f"Conversation History:\n{get_buffer_string(compact_history)}"
+        )
 
+    prompt = HumanMessage(content=formatted_prompt_text)
     response: ClarifyWithUser = await reliable_model.ainvoke([prompt], config=config)
 
     # Route based on clarification outcome
     if response.need_clarification:
+        # Trigger native LangGraph interrupt with the custom payload
+        user_answer = interrupt({
+            "type": "clarification_request",
+            "question": response.question,
+            "questions": [response.question]
+        })
+        
+        # When resumed, parse user answer
+        user_response_str = str(user_answer)
+        if isinstance(user_answer, dict):
+            user_response_str = user_answer.get("response") or next(iter(user_answer.values()))
+
         return Command(
-            goto=END,
-            update={"messages": [AIMessage(content=response.question)]},
+            goto="write_research_brief",
+            update={"messages": [
+                AIMessage(content=response.question),
+                HumanMessage(content=user_response_str)
+            ]}
         )
     else:
         return Command(
