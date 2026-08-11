@@ -215,7 +215,7 @@ class ResearchService:
                     continue
 
                 if event == "updates":
-                    await self._handle_updates(data, on_node_stage, on_interrupt)
+                    await self._handle_updates(data, on_node_stage, on_token, on_interrupt)
 
                 elif event == "messages":
                     await self._handle_messages(data, on_token)
@@ -234,6 +234,7 @@ class ResearchService:
         self,
         data: Any,
         on_node_stage: Optional[CallbackType],
+        on_token: Optional[CallbackType],
         on_interrupt: Optional[CallbackType],
     ) -> bool:
         """Returns True if an interrupt was surfaced this chunk."""
@@ -253,6 +254,13 @@ class ResearchService:
 
         for node_name, node_output in data.items():
             await self._invoke(on_node_stage, node_name)
+
+            # Stream static messages immediately to the user (e.g. clarification verification)
+            if isinstance(node_output, dict) and "messages" in node_output:
+                for msg in node_output["messages"]:
+                    content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+                    if content and on_token:
+                        await self._invoke(on_token, node_name, content)
 
             # --- Convention 2: custom state-flag interrupt ---
             if isinstance(node_output, dict) and node_output.get("type") == "clarification_request":

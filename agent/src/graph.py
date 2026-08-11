@@ -44,14 +44,15 @@ primary_writer = init_chat_model(
     model="google_genai:gemini-3.6-flash", 
     api_key=settings.GOOGLE_API_KEY,
     temperature=0.0, 
-    max_tokens=32000
-    
+    max_tokens=32000,
+    streaming=True
 )
 backup_writer = init_chat_model(
     model="google_genai:gemini-3.5-flash", 
     api_key=settings.GOOGLE_API_KEY,
     temperature=0.0,
-    max_tokens=32000
+    max_tokens=32000,
+    streaming=True
 )
 
 reliable_writer_model = (

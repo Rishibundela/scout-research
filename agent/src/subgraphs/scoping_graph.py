@@ -50,7 +50,8 @@ backup_model = init_chat_model(
 
 general_llm = init_chat_model(
     model="google_genai:gemini-3.1-flash-lite", 
-    api_key=settings.GOOGLE_API_KEY
+    api_key=settings.GOOGLE_API_KEY,
+    streaming=True
 )
 
 
