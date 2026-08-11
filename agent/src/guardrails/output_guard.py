@@ -264,10 +264,97 @@ def verify_url_grounding(report_text: str, notes: list) -> tuple[str, int]:
 
 
 def validate_report_structure(report_text: str) -> str:
-    """Ensures report contains basic structural elements."""
+    """
+    Programmatic output guardrail that:
+    1. Repairs broken Markdown link spacing (e.g. [Title] (URL)).
+    2. Auto-heals Mermaid syntax issues (first-line text intrusions, unquoted subgraphs with spaces/&, special character node labels).
+    3. Guarantees top-level header structure.
+    """
     if not report_text or len(report_text.strip()) < 100:
         return "# Research Report\n\n*Error: Generated report was incomplete or empty.*"
 
+    # 1. Clean up Markdown links
+    # Fix space between brackets and parentheses: [Link Title] (http://...) -> [Link Title](http://...)
+    report_text = re.sub(r'\[([^\]]+)\]\s+\((https?://[^\s\)]+)\)', r'[\1](\2)', report_text)
+    # Fix double parentheses: [Link Title]((http://...)) -> [Link Title](http://...)
+    report_text = re.sub(r'\[([^\]]+)\]\(\((https?://[^\s\)]+)\)\)', r'[\1](\2)', report_text)
+
+    # 2. Auto-heal Mermaid Code Blocks
+    def heal_mermaid_block(match: re.Match) -> str:
+        content = match.group(1)
+        lines = content.split("\n")
+        
+        # Valid diagram type declarations
+        diag_declarations = [
+            "graph", "flowchart", "sequenceDiagram", "gantt", 
+            "classDiagram", "stateDiagram", "erDiagram", "journey", 
+            "pie", "gitGraph", "requirementDiagram"
+        ]
+        
+        first_diag_idx = -1
+        for idx, line in enumerate(lines):
+            trimmed = line.strip()
+            if any(trimmed.startswith(decl) for decl in diag_declarations):
+                first_diag_idx = idx
+                break
+        
+        pre_text = ""
+        diag_lines = lines
+        if first_diag_idx > 0:
+            # Found text before diagram declaration inside block! Move it above
+            pre_text = "\n".join(lines[:first_diag_idx]).strip() + "\n\n"
+            diag_lines = lines[first_diag_idx:]
+        elif first_diag_idx == -1:
+            # No declaration found. Inject default flowchart TD
+            diag_lines = ["flowchart TD"] + lines
+            
+        cleaned_lines = []
+        for line in diag_lines:
+            stripped = line.strip()
+            if not stripped:
+                cleaned_lines.append(line)
+                continue
+            
+            # Clean Subgraphs: ensure titles containing spaces or '&' are safely quoted
+            subgraph_match = re.match(r"^(\s*subgraph\s+)([^\n]+)$", line)
+            if subgraph_match:
+                prefix = subgraph_match.group(1)
+                body = subgraph_match.group(2).strip()
+                
+                if body.startswith('"') and body.endswith('"'):
+                    pass
+                elif '["' in body and body.endswith('"]'):
+                    pass
+                else:
+                    # Parse ID[Label] or ID["Label"] format
+                    label_match = re.match(r"^([a-zA-Z0-9_\-]+)\[(.*)\]$", body)
+                    if label_match:
+                        sub_id = label_match.group(1)
+                        label = label_match.group(2).strip().strip('"')
+                        body = f'{sub_id}["{label}"]'
+                    else:
+                        # Raw title: wrap in double quotes if it contains spaces or non-word characters
+                        if re.search(r"[^a-zA-Z0-9_\-]", body):
+                            body = f'"{body.replace('"', "")}"'
+                cleaned_lines.append(f"{prefix}{body}")
+                continue
+                
+            # Clean Node Labels: wrap NodeID[Label] in double quotes to prevent syntax errors
+            # Only matches unquoted labels to avoid double-escaping.
+            # Example: A[Perception & Planning] -> A["Perception & Planning"]
+            line = re.sub(
+                r'([a-zA-Z0-9_\-]+)([(\[\{])([^"()\[\]\{\}]+)([)\]\}])',
+                r'\1\2"\3"\4',
+                line
+            )
+            cleaned_lines.append(line)
+            
+        res_content = "\n".join(cleaned_lines)
+        return f"{pre_text}```mermaid\n{res_content}\n```"
+
+    report_text = re.sub(r"```mermaid\n([\s\S]*?)```", heal_mermaid_block, report_text)
+
+    # 3. Ensure top-level headers exist
     if not re.search(r"^#+\s+", report_text, re.MULTILINE):
         report_text = f"# Final Research Report\n\n{report_text}"
 
