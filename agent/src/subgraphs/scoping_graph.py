@@ -155,26 +155,13 @@ async def clarify_with_user(
 
     # Route based on clarification outcome
     if response.need_clarification:
-        # Trigger native LangGraph interrupt with the custom payload
-        user_answer = interrupt({
-            "type": "clarification_request",
-            "question": response.question,
-            "questions": [response.question]
-        })
-        
-        # When resumed, parse user answer
-        user_response_str = str(user_answer)
-        if isinstance(user_answer, dict):
-            user_response_str = user_answer.get("response") or next(iter(user_answer.values()))
-
+        # Output clarification question and send the graph turn to END
         return Command(
-            goto="write_research_brief",
-            update={"messages": [
-                AIMessage(content=response.question),
-                HumanMessage(content=user_response_str)
-            ]}
+            goto=END,
+            update={"messages": [AIMessage(content=response.question)]}
         )
     else:
+        # All details provided: output confirmation and proceed to research brief
         return Command(
             goto="write_research_brief",
             update={"messages": [AIMessage(content=response.verification)]},
