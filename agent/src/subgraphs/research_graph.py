@@ -10,6 +10,7 @@ import logging
 from typing_extensions import Literal
 
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, filter_messages
+from langchain_core.runnables import RunnableConfig
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, RetryPolicy, TimeoutPolicy
@@ -52,10 +53,15 @@ backup_compress_model = init_chat_model(
 )
 
 
-def get_reliable_model():
+def get_reliable_model(tools=None):
     """Model chain with retries and failover for main reasoning."""
-    primary_retry = primary_model.with_retry(stop_after_attempt=3, wait_exponential_jitter=True)
-    backup_retry = backup_model.with_retry(stop_after_attempt=2, wait_exponential_jitter=True)
+    p_model = primary_model
+    b_model = backup_model
+    if tools:
+        p_model = p_model.bind_tools(tools)
+        b_model = b_model.bind_tools(tools)
+    primary_retry = p_model.with_retry(stop_after_attempt=3, wait_exponential_jitter=True)
+    backup_retry = b_model.with_retry(stop_after_attempt=2, wait_exponential_jitter=True)
     return primary_retry.with_fallbacks([backup_retry])
 
 
@@ -67,14 +73,19 @@ def get_reliable_compress_model():
 
 # ===== 2. AGENT WORKFLOW NODES =====
 
-async def llm_call(state: ResearcherState) -> dict:
+async def llm_call(state: ResearcherState, config: RunnableConfig) -> dict:
     """Analyze current state and decide on next actions."""
     tools = await get_all_tools()
-    reliable_model = get_reliable_model()
-    model_with_tools = reliable_model.bind_tools(tools)
+    model_with_tools = get_reliable_model(tools=tools)
+
+    thread_id = config.get("configurable", {}).get("thread_id") if config else None
+    local_info = ""
+    if thread_id:
+        local_info = f"\n\nIf the user asks about local documents, files, or reference material, check the folder named '{thread_id}' inside the directory. You can list its contents using the list_directory tool with the path '{thread_id}' and read the files using read_file."
 
     response = await model_with_tools.ainvoke(
-        [SystemMessage(content=research_agent_prompt)] + state["researcher_messages"]
+        [SystemMessage(content=research_agent_prompt + local_info)] + state["researcher_messages"],
+        config=config
     )
     return {"researcher_messages": [response]}
     

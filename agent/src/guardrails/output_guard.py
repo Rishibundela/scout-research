@@ -273,6 +273,9 @@ def validate_report_structure(report_text: str) -> str:
     if not report_text or len(report_text.strip()) < 100:
         return "# Research Report\n\n*Error: Generated report was incomplete or empty.*"
 
+    # Normalize Windows line endings to Unix format first to ensure regex matches
+    report_text = report_text.replace("\r\n", "\n")
+
     # 1. Clean up Markdown links
     # Fix space between brackets and parentheses: [Link Title] (http://...) -> [Link Title](http://...)
     report_text = re.sub(r'\[([^\]]+)\]\s+\((https?://[^\s\)]+)\)', r'[\1](\2)', report_text)

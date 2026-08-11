@@ -77,7 +77,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div id="err-banner"></div>
 <div id="content"></div>
 <script>
-  const raw = __RAW_MD_JSON__;
+  const raw = typeof __RAW_MD_JSON__ === 'string' ? __RAW_MD_JSON__.replace(/\r\n/g, '\n') : '';
   const container = document.getElementById('content');
   const errBanner = document.getElementById('err-banner');
 
@@ -175,11 +175,14 @@ def build_report_html(markdown_text: str, height: int = 720) -> str:
     GFM tables, KaTeX math (`$...$` / `$$...$$`), and ```mermaid diagrams.
     """
     safe = markdown_text if isinstance(markdown_text, str) and markdown_text.strip() else "*No content.*"
+    if isinstance(safe, str):
+        safe = safe.replace("\r\n", "\n")
     return _HTML_TEMPLATE.replace("__RAW_MD_JSON__", json.dumps(safe))
 
 
 def export_markdown(markdown_text: str) -> bytes:
-    return (markdown_text or "").encode("utf-8")
+    normalized = (markdown_text or "").replace("\r\n", "\n")
+    return normalized.encode("utf-8")
 
 
 def get_mermaid_png_data_uri(mermaid_code: str) -> Optional[str]:
@@ -249,6 +252,7 @@ def export_pdf(markdown_text: str, title: str = "Research Report") -> Optional[b
         return None
 
     try:
+        markdown_text = (markdown_text or "").replace("\r\n", "\n")
         # Replace mermaid blocks with static PNG base64 Data URIs
         def _mermaid_to_image_tag(match):
             code = match.group(1).strip()

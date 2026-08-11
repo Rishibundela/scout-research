@@ -21,10 +21,27 @@ from typing import Any, Optional
 
 import streamlit as st
 
+import uuid
 import agent_runtime
 from config import settings
 from research_service import ResearchService
 from report_utils import build_report_html, export_markdown, export_pdf
+
+
+def get_or_create_user_id() -> str:
+    """Generates a unique user ID per browser session and persists it in query params."""
+    if "user_id" not in st.session_state:
+        # Check if user_id exists in URL parameters (persists on reload)
+        url_user_id = st.query_params.get("user_id")
+        if url_user_id:
+            st.session_state.user_id = url_user_id
+        else:
+            # Generate a fresh anonymous UUID for this browser tab session
+            new_id = f"anon_{uuid.uuid4().hex[:10]}"
+            st.session_state.user_id = new_id
+            st.query_params["user_id"] = new_id
+
+    return st.session_state.user_id
 
 # --------------------------------------------------------------------------
 # Logging
@@ -141,7 +158,8 @@ def safely(fn, *args, **kwargs):
 # --------------------------------------------------------------------------
 def _start_agent_thread() -> str:
     service = ResearchService()
-    return run_async(service.start_session(user_id=settings.DEFAULT_USER_ID))
+    user_id = get_or_create_user_id()
+    return run_async(service.start_session(user_id=user_id))
 
 def create_new_chat() -> None:
     with st.spinner("Starting a new conversation…"):
@@ -179,6 +197,7 @@ def delete_chat(thread_id: str) -> None:
 
 def ensure_current_chat() -> str:
     service = ResearchService()
+    user_id = get_or_create_user_id()
     
     # Try getting the active Thread ID from the URL parameters first (persists on reload!)
     url_thread_id = st.query_params.get("thread_id")
@@ -199,7 +218,7 @@ def ensure_current_chat() -> str:
 
     # Try listing from Supabase
     try:
-        sessions = run_async(service.list_sessions(settings.DEFAULT_USER_ID))
+        sessions = run_async(service.list_sessions(user_id))
         if sessions:
             st.session_state.thread_id = sessions[0]["thread_id"]
             st.query_params["thread_id"] = sessions[0]["thread_id"]
@@ -222,6 +241,7 @@ def ensure_current_chat() -> str:
 # --------------------------------------------------------------------------
 def render_sidebar(thread_id: str) -> None:
     service = ResearchService()
+    user_id = get_or_create_user_id()
     with st.sidebar:
         st.markdown("### 🛰️ Scout")
         st.caption(settings.APP_TITLE)
@@ -235,7 +255,7 @@ def render_sidebar(thread_id: str) -> None:
         
         # Load thread list directly from Supabase via service
         try:
-            sessions = run_async(service.list_sessions(settings.DEFAULT_USER_ID))
+            sessions = run_async(service.list_sessions(user_id))
         except Exception as e:
             logger.error(f"Failed listing sessions from Supabase: {e}")
             sessions = []
@@ -258,6 +278,56 @@ def render_sidebar(thread_id: str) -> None:
                     st.rerun()
                 if cols[1].button("🗑️", key=f"del_{s['thread_id']}", help="Delete this chat"):
                     delete_chat(s["thread_id"])
+
+        # Reference Documents (MCP Filesystem) manager
+        from pathlib import Path
+        
+        # Isolate uploaded files to a subfolder named after the active thread_id
+        if thread_id:
+            st.divider()
+            with st.expander("📂 Reference Documents (MCP)", expanded=False):
+                st.markdown(
+                    "<small>Upload local files (PDF, CSV, TXT) for the agent to inspect during research.</small>", 
+                    unsafe_allow_html=True
+                )
+                
+                files_dir = Path("files") / thread_id
+                files_dir.mkdir(parents=True, exist_ok=True)
+                
+                uploaded_files = st.file_uploader(
+                    "Upload reference files",
+                    accept_multiple_files=True,
+                    label_visibility="collapsed",
+                    key=f"mcp_upload_{thread_id}"
+                )
+                
+                if uploaded_files:
+                    for f in uploaded_files:
+                        target_path = files_dir / f.name
+                        if not target_path.exists():
+                            try:
+                                with open(target_path, "wb") as out_f:
+                                    out_f.write(f.getbuffer())
+                                st.toast(f"Uploaded {f.name}", icon="✅")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error saving {f.name}: {e}")
+                
+                # List current files in the thread's isolated directory
+                local_files = [x for x in files_dir.iterdir() if x.is_file()]
+                if not local_files:
+                    st.caption("No reference documents uploaded.")
+                else:
+                    for file_path in local_files:
+                        f_cols = st.columns([4, 1])
+                        f_cols[0].markdown(f"<small>📄 {file_path.name}</small>", unsafe_allow_html=True)
+                        if f_cols[1].button("🗑️", key=f"del_file_{thread_id}_{file_path.name}", help=f"Delete {file_path.name}"):
+                            try:
+                                file_path.unlink()
+                                st.toast(f"Deleted {file_path.name}", icon="🗑️")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed deleting {file_path.name}: {e}")
 
         st.divider()
         with st.expander("⚙️ Session details"):
