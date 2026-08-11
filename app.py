@@ -319,8 +319,9 @@ def is_report(content: str) -> bool:
 
 def render_copy_button(text: str, key: str) -> None:
     """Renders a small client-side button to copy text to the clipboard."""
-    import json
+    import json, re
     safe_text = json.dumps(text)
+    safe_text = re.sub(r'</script>', r'<\\/script>', safe_text, flags=re.IGNORECASE)
     html_code = f"""
     <button id="copy-btn" style="
         width: 100%;
