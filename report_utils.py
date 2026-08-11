@@ -78,9 +78,9 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div id="content"></div>
 <script>
   function decodeBase64(b64) {
-    const binString = atob(b64);
-    const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
-    return new TextDecoder().decode(bytes);
+    return decodeURIComponent(atob(b64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
   }
 
   const raw = decodeBase64("__BASE64_MD__");
@@ -201,7 +201,7 @@ def get_mermaid_png_data_uri(mermaid_code: str) -> Optional[str]:
     and a custom User-Agent header to bypass scraper blocker filters.
     """
     import base64
-    b64_str = base64.b64encode(mermaid_code.strip().encode("utf-8")).decode("utf-8")
+    b64_str = base64.urlsafe_b64encode(mermaid_code.strip().encode("utf-8")).decode("utf-8")
     img_url = f"https://mermaid.ink/img/{b64_str}"
     try:
         ctx = ssl.create_default_context()
