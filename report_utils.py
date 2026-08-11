@@ -91,8 +91,14 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     const inlineMath = [];
     const mermaidBlocks = [];
 
-    // Split text into paragraphs to isolate mismatched delimiters
-    const paragraphs = raw.split('\n\n');
+    // Extract mermaid blocks FIRST from full text (they can span blank lines)
+    let preSplit = raw.replace(/```mermaid\n([\s\S]*?)```/g, (m, code) => {
+      const idx = mermaidBlocks.push(code) - 1;
+      return '<div class="mermaid-placeholder" data-idx="' + idx + '"></div>';
+    });
+
+    // Split text into paragraphs to isolate mismatched math delimiters
+    const paragraphs = preSplit.split('\n\n');
     const processedParagraphs = paragraphs.map((p) => {
       // Extract display math ($$ ... $$)
       let processed = p.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (m, code) => {
@@ -106,12 +112,6 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
         const cleanCode = code.replace(/\\+mum\b/g, '\\mu\\text{m}');
         const idx = inlineMath.push(cleanCode) - 1;
         return '<span class="inline-math-placeholder" data-idx="' + idx + '"></span>';
-      });
-
-      // Extract mermaid blocks
-      processed = processed.replace(/```mermaid\n([\s\S]*?)```/g, (m, code) => {
-        const idx = mermaidBlocks.push(code) - 1;
-        return '<div class="mermaid-placeholder" data-idx="' + idx + '"></div>';
       });
 
       return processed;
@@ -288,7 +288,14 @@ def export_pdf(markdown_text: str, title: str = "Research Report") -> Optional[b
                 return f'<img src="{data_uri}" style="vertical-align: middle; height: 13px; margin: 0 2px;"/>'
             return f'${formula}$'
 
-        # Isolate replacements paragraph-by-paragraph to prevent delimiter leaks
+        # Replace mermaid blocks FIRST from full text (they can span blank lines)
+        markdown_text = re.sub(
+            r"```mermaid\n([\s\S]*?)```",
+            _mermaid_to_image_tag,
+            markdown_text
+        )
+
+        # Isolate math replacements paragraph-by-paragraph to prevent delimiter leaks
         paragraphs = (markdown_text or "").split("\n\n")
         processed_paragraphs = []
         
@@ -303,12 +310,6 @@ def export_pdf(markdown_text: str, title: str = "Research Report") -> Optional[b
             p = re.sub(
                 r"\$([^\s\$](?:[^\$]{0,150}?[^\s\$])?)\$",
                 _inline_math_to_image,
-                p
-            )
-            # 3. Replace mermaid blocks
-            p = re.sub(
-                r"```mermaid\n([\s\S]*?)```",
-                _mermaid_to_image_tag,
                 p
             )
             processed_paragraphs.append(p)
