@@ -45,6 +45,22 @@ class RunCancelled(Exception):
     """Raised when a run is cooperatively cancelled via a cancel_event."""
 
 
+def _extract_text_content(content: Any) -> str:
+    """Recursively converts message content (dict, list, or string) to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                if "text" in part and isinstance(part["text"], str):
+                    parts.append(part["text"])
+        return "".join(parts)
+    return str(content) if content is not None else ""
+
+
 class ResearchService:
     """High-level business logic orchestrator for research workflows."""
 
@@ -260,7 +276,9 @@ class ResearchService:
                 for msg in node_output["messages"]:
                     content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
                     if content and on_token:
-                        await self._invoke(on_token, node_name, content)
+                        text_str = _extract_text_content(content)
+                        if text_str:
+                            await self._invoke(on_token, node_name, text_str)
 
             # --- Convention 2: custom state-flag interrupt ---
             if isinstance(node_output, dict) and node_output.get("type") == "clarification_request":
@@ -285,5 +303,7 @@ class ResearchService:
             content = message.content
 
         if content:
-            await self._invoke(on_token, node_name, content)
+            text_str = _extract_text_content(content)
+            if text_str:
+                await self._invoke(on_token, node_name, text_str)
             

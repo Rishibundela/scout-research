@@ -314,7 +314,25 @@ def validate_report_structure(report_text: str) -> str:
             if not stripped:
                 cleaned_lines.append(line)
                 continue
-            
+
+            # Split combined connection and node definitions to ensure compatibility,
+            # e.g. source["Source Label"] -- "Edge Text" --> target["Target Label"]
+            # becomes:
+            # source["Source Label"]
+            # target["Target Label"]
+            # source -- "Edge Text" --> target
+            if "-->" in line or "---" in line:
+                # Find all node definitions of the form ID[Label], ID(Label), or ID{Label}
+                defs = re.findall(r'([a-zA-Z0-9_\-]+)([(\[\{])([^()\[\]\{\}]+)([)\]\}])', line)
+                if defs:
+                    indent_match = re.match(r"^(\s*)", line)
+                    indent = indent_match.group(1) if indent_match else ""
+                    
+                    for node_id, open_b, label, close_b in defs:
+                        cleaned_lines.append(f"{indent}{node_id}{open_b}{label}{close_b}")
+                        original_str = f"{node_id}{open_b}{label}{close_b}"
+                        line = line.replace(original_str, node_id)
+
             # Clean Subgraphs: ensure titles containing spaces or '&' are safely quoted
             subgraph_match = re.match(r"^(\s*subgraph\s+)([^\n]+)$", line)
             if subgraph_match:
