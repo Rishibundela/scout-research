@@ -335,7 +335,8 @@ def validate_report_structure(report_text: str) -> str:
                     else:
                         # Raw title: wrap in double quotes if it contains spaces or non-word characters
                         if re.search(r"[^a-zA-Z0-9_\-]", body):
-                            body = f'"{body.replace('"', "")}"'
+                            clean_body = body.replace('"', "")
+                            body = f'"{clean_body}"'
                 cleaned_lines.append(f"{prefix}{body}")
                 continue
                 
