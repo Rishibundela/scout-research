@@ -55,6 +55,10 @@ _GROUP_KEYWORDS = {
     "clarify": "clarify",
     "general_assistant": "general",
     "final_report_generation": "draft_report",
+    "report": "draft_report",
+    "draft": "draft_report",
+    "writer": "draft_report",
+    "output_guardrail": "draft_report",
 }
 BUBBLE_GROUPS = {"clarify", "general", "draft_report"}
 

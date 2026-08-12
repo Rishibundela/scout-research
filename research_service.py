@@ -214,6 +214,8 @@ class ResearchService:
     ) -> None:
         message_metadata = {}
         last_text_lengths = {}
+        processed_message_ids = set()
+        final_state = None
         try:
             async for chunk in self.client.stream_run(
                 thread_id=thread_id,
@@ -233,7 +235,7 @@ class ResearchService:
                     continue
 
                 if event == "updates":
-                    await self._handle_updates(data, on_node_stage, on_token, on_interrupt)
+                    await self._handle_updates(data, on_node_stage, on_interrupt)
 
                 elif event == "messages/metadata":
                     if isinstance(data, dict):
@@ -250,32 +252,37 @@ class ResearchService:
                             msg_id = msg.get("id")
                             node_name = message_metadata.get(msg_id, "unknown")
                             content = msg.get("content")
-                            full_text = ""
-                            if isinstance(content, list) and content:
-                                text_parts = []
-                                for part in content:
-                                    if isinstance(part, dict) and "text" in part:
-                                        text_parts.append(part["text"])
-                                    elif isinstance(part, str):
-                                        text_parts.append(part)
-                                full_text = "".join(text_parts)
-                            elif isinstance(content, str):
-                                full_text = content
+                            full_text = _extract_text_content(content)
 
                             if full_text and msg_id:
                                 last_len = last_text_lengths.get(msg_id, 0)
                                 if len(full_text) > last_len:
                                     delta = full_text[last_len:]
                                     last_text_lengths[msg_id] = len(full_text)
+                                    processed_message_ids.add(msg_id)
                                     if delta and on_token:
                                         await self._invoke(on_token, node_name, delta)
 
                 elif event == "messages":
-                    await self._handle_messages(data, on_token)
+                    if isinstance(data, (tuple, list)) and data:
+                        message = data[0]
+                        msg_id = message.get("id") if isinstance(message, dict) else getattr(message, "id", None)
+                        if not msg_id or msg_id not in processed_message_ids:
+                            node_name = "unknown"
+                            if len(data) > 1 and isinstance(data[1], dict):
+                                    node_name = data[1].get("langgraph_node", node_name)
+                            content = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+                            if content:
+                                text_str = _extract_text_content(content)
+                                if text_str and on_token:
+                                    await self._invoke(on_token, node_name, text_str)
 
                 elif event == "values":
-                    if isinstance(data, dict) and data.get("final_report"):
-                        await self._invoke(on_complete, data)
+                    if isinstance(data, dict):
+                        final_state = data
+
+            if final_state and on_complete:
+                await self._invoke(on_complete, final_state)
 
         except RunCancelled:
             raise
@@ -287,7 +294,6 @@ class ResearchService:
         self,
         data: Any,
         on_node_stage: Optional[CallbackType],
-        on_token: Optional[CallbackType],
         on_interrupt: Optional[CallbackType],
     ) -> bool:
         """Returns True if an interrupt was surfaced this chunk."""
@@ -308,39 +314,9 @@ class ResearchService:
         for node_name, node_output in data.items():
             await self._invoke(on_node_stage, node_name)
 
-            # Stream static messages immediately to the user (e.g. clarification verification)
-            if isinstance(node_output, dict) and "messages" in node_output:
-                for msg in node_output["messages"]:
-                    content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
-                    if content and on_token:
-                        text_str = _extract_text_content(content)
-                        if text_str:
-                            await self._invoke(on_token, node_name, text_str)
-
             # --- Convention 2: custom state-flag interrupt ---
             if isinstance(node_output, dict) and node_output.get("type") == "clarification_request":
                 await self._invoke(on_interrupt, node_output, node_name)
                 return True
         return False
-
-    async def _handle_messages(self, data: Any, on_token: Optional[CallbackType]) -> None:
-        """`messages` stream_mode yields (message_chunk, metadata) tuples."""
-        if not isinstance(data, (tuple, list)) or not data:
-            return
-
-        message = data[0]
-        node_name = "unknown"
-        if len(data) > 1 and isinstance(data[1], dict):
-            node_name = data[1].get("langgraph_node", node_name)
-
-        content: Any = None
-        if isinstance(message, dict) and "content" in message:
-            content = message["content"]
-        elif hasattr(message, "content"):
-            content = message.content
-
-        if content:
-            text_str = _extract_text_content(content)
-            if text_str:
-                await self._invoke(on_token, node_name, text_str)
             
