@@ -33,7 +33,8 @@ from agent.src.guardrails.output_guard import (
     sanitize_secrets_and_pii,
     verify_url_grounding,
     validate_report_structure,
-    sanitize_latex_units
+    sanitize_latex_units,
+    heal_latex_delimiters
 )
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,9 @@ async def output_guardrail_node(state: AgentState) -> dict:
 
     # Step 1.5: Sanitize raw LaTeX units for clean rendering
     clean_report = sanitize_latex_units(clean_report)
+
+    # Step 1.6: Heal mismatched LaTeX delimiters ($$ ... $ -> $$ ... $$)
+    clean_report = heal_latex_delimiters(clean_report)
 
     # Step 2: Grounding check (detect & flag unverified URLs cleanly via canonicalize_url)
     clean_report, hallucinated_count = verify_url_grounding(clean_report, notes)

@@ -65,6 +65,100 @@ def sanitize_latex_units(text: str) -> str:
     return text
 
 
+def heal_latex_delimiters(text: str) -> str:
+    """Fixes mismatched LaTeX math delimiters produced by LLMs.
+
+    Uses a sequential scan to find $$ openers and check their closers.
+    Common failure modes healed:
+    - $$ formula $   (display open, inline close) -> $$ formula $$
+    - word$ mid-sentence  (stray orphaned dollar sign removed)
+    """
+    if not text:
+        return text
+
+    # Protect code blocks from modification
+    code_blocks = []
+    def _save_code(m):
+        code_blocks.append(m.group(0))
+        return f"__CODE_BLOCK_{len(code_blocks) - 1}__"
+    text = re.sub(r"```[\s\S]*?```", _save_code, text)
+
+    # Fix 1: Find $$ ... $ patterns where the closing is a single $
+    # Strategy: find all $$ openers, then check if closed by $$ or single $
+    result = []
+    i = 0
+    length = len(text)
+    while i < length:
+        # Check for $$ (display math opener)
+        if i < length - 1 and text[i] == '$' and text[i + 1] == '$':
+            # Find the closing delimiter
+            j = i + 2
+            close_pos = -1
+            while j < length:
+                if j < length - 1 and text[j] == '$' and text[j + 1] == '$':
+                    # Proper $$ close found
+                    close_pos = j
+                    break
+                elif text[j] == '$' and (j + 1 >= length or text[j + 1] != '$'):
+                    # Single $ found - check if this looks like a mismatched close
+                    # (i.e., the content between $$ and $ contains LaTeX commands)
+                    content = text[i + 2:j]
+                    if '\\' in content or '\n' in content:
+                        # This is likely a mismatched display math close - heal it
+                        result.append('$$')
+                        result.append(content)
+                        result.append('$$')
+                        i = j + 1
+                        close_pos = -2  # sentinel: already handled
+                        break
+                j += 1
+            if close_pos == -2:
+                continue  # already appended
+            elif close_pos >= 0:
+                # Proper $$ ... $$ block - pass through unchanged
+                result.append(text[i:close_pos + 2])
+                i = close_pos + 2
+            else:
+                # No close found at all - pass through as-is
+                result.append(text[i:i + 2])
+                i += 2
+        else:
+            result.append(text[i])
+            i += 1
+
+    text = ''.join(result)
+
+    # Fix 2: Stray $ attached to word boundaries (e.g., "where n$ is the total")
+    # Only strip when the $ is NOT closing a valid inline math span.
+    # We check: is there an unmatched opening $ before this position on the same line?
+    prose_words = {'is','are','was','were','the','a','an','and','or','of','in','to',
+                   'for','that','this','with','from','by','as','at','on','not',
+                   'has','have','had','can','will','be','it'}
+    def _fix_stray_dollar(m):
+        pre_text = text[:m.start()]
+        # Count $ signs on the current line before this match
+        last_newline = pre_text.rfind('\n')
+        line_before = pre_text[last_newline + 1:]
+        # Count unescaped $ signs (excluding $$)
+        singles = len(re.findall(r'(?<!\$)\$(?!\$)', line_before))
+        if singles % 2 == 1:
+            # Odd count means there's an open $ waiting to be closed — this $ is the closer
+            return m.group(0)  # don't modify
+        # Even count means this $ is orphaned — strip it
+        return f"{m.group(1)} {m.group(2)}"
+
+    text = re.sub(
+        r"(?<!\$)(\w)\$\s+(is|are|was|were|the|a|an|and|or|of|in|to|for|that|this|with|from|by|as|at|on|not|has|have|had|can|will|be|it)\b",
+        _fix_stray_dollar,
+        text
+    )
+
+    # Restore code blocks
+    for i, block in enumerate(code_blocks):
+        text = text.replace(f"__CODE_BLOCK_{i}__", block)
+
+    return text
+
 # =====================================================================
 # 1. HERE IS THE CANONICALIZE FUNCTION (Replaces normalize_url)
 # =====================================================================
