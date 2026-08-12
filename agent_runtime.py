@@ -40,6 +40,8 @@ import logging
 import threading
 import time
 import uuid
+import re
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -71,6 +73,26 @@ def node_group(node_name: str) -> str:
         if token in key:
             return group
     return "progress"
+
+
+def _clean_clarify_token(raw_text: str) -> str:
+    """Helper to extract clean message content if tokens belong to JSON schema."""
+    if not raw_text.strip().startswith("{"):
+        return raw_text
+
+    # Try parsing complete JSON if available
+    try:
+        data = json.loads(raw_text)
+        return data.get("verification") or data.get("question") or ""
+    except json.JSONDecodeError:
+        pass
+
+    # Find ALL matches and take the last one (which is the active streaming field)
+    matches = list(re.finditer(r'"(?:verification|question)"\s*:\s*"([^"]*)', raw_text))
+    if matches:
+        return matches[-1].group(1)
+
+    return raw_text
 
 
 # --------------------------------------------------------------------------
@@ -193,6 +215,7 @@ def _worker_entrypoint(handle: RunHandle, mode: str, kwargs: dict) -> None:
 
 async def _worker(handle: RunHandle, mode: str, kwargs: dict) -> None:
     service = ResearchService()
+    raw_buffers = {}
 
     def on_node_stage(node_name: str) -> None:
         with handle.lock:
@@ -215,7 +238,12 @@ async def _worker(handle: RunHandle, mode: str, kwargs: dict) -> None:
                 _finalize_current_segment(handle)
                 _open_segment(handle, group)
                 current = handle.segments[-1]
-            current.text += token
+            
+            raw_buffers[group] = raw_buffers.get(group, "") + token
+            if group in ("clarify", "general"):
+                current.text = _clean_clarify_token(raw_buffers[group])
+            else:
+                current.text = raw_buffers[group]
 
     def on_interrupt(payload: Any, node_name: str) -> None:
         with handle.lock:
