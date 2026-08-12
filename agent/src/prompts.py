@@ -131,6 +131,13 @@ After every search, evaluate your findings against this Density Audit:
 - What crucial detail is still vague or missing?
 - What exact query will retrieve that missing detail in my next search?
 </Reflection Protocol>
+
+<URL Preservation Rule>
+- When summarizing search results, you MUST preserve the exact source URL for every fact.
+  Example: "GPQA benchmark results show 84% accuracy [https://arxiv.org/abs/2311.12022]"
+- NEVER drop, truncate, or omit raw source URLs from your worker notes.
+</URL Preservation Rule>
+
 """
 
 summarize_webpage_prompt = """You are tasked with summarizing the raw content of a webpage retrieved from a web search. Your goal is to create a summary that preserves the most important information from the original web page. This summary will be used by a downstream research agent, so it's crucial to maintain the key details without losing essential information.
@@ -236,6 +243,17 @@ The report should be structured like this:
   [2] Source Title: URL
 </Citation Rules>
 
+<URL Integrity Constraints>
+- ABSOLUTE URL INTEGRITY: Copy every source URL EXACTLY character-for-character as found in the raw text.
+- NEVER drop, shorten, or convert `https://...` links into bare domain names during note compaction.
+- Attach the exact raw source URL directly alongside the bullet point finding it supports.
+- End with ### Sources that lists each source with corresponding numbers
+- IMPORTANT: Number sources sequentially without gaps (1,2,3,4...) in the final list regardless of which sources you choose
+- Example format:
+  [1] Source Title: https://exact-url-from-search-results.com
+  [2] Source Title: https://exact-url-from-search-results.com
+</URL Integrity Constraints>
+
 Critical Reminder: It is extremely important that any information that is even remotely relevant to the user's research topic is preserved verbatim (e.g. don't rewrite it, don't summarize it, don't paraphrase it).
 """
 
@@ -315,7 +333,9 @@ After each ConductResearch tool call, use think_tool to perform a Data Density A
 - When calling ConductResearch, provide complete standalone instructions - sub-agents can't see other agents' work.
 - Explicitly instruct sub-agents to search for primary evidence: exact codenames, signing dates, tonnage/GWh capacity numbers, and underlying mechanics.
 - Do NOT use acronyms or abbreviations in your research questions, be very clear and specific.
-</Scaling Rules>"""
+- Preserve all embedded `https://...` URLs in the aggregated findings when completing delegation.
+</Scaling Rules>
+"""
 
 final_report_generation_prompt = """Based on all the research conducted, create a comprehensive, well-structured answer to the overall research brief:
 <Research Brief>
@@ -424,23 +444,28 @@ graph TD
 <Citation Rules>
 CRITICAL MANDATE: CITATIONS ARE NON-NEGOTIABLE. EVERY SINGLE FACT, METRIC, DATE, CODENAME, AND CLAIM MUST BE INLINE CITED WITH BRACKETS [1], [2] MATCHING A VALID LINK IN THE ## SOURCES SECTION. REPORTS WITHOUT INLINE BRACKET CITATIONS ARE INCOMPLETE SYSTEM FAILURES.
 
-1. **Inline Reference Style**:
+1. **Strict Source Boundary**:
+   - You MUST ONLY use source URLs that are explicitly provided in the <Findings> context.
+   - NEVER invent, synthesize, or guess a URL from memory (e.g., do NOT construct domain names like "inspect.ai-safety-institute.org.uk").
+   - Copy the exact `https://...` URL string from the <Findings> context into the bibliography without modification.
+
+2. **Inline Reference Style**:
    - Every claim, metric, figure, or codename MUST be followed immediately by an inline bracket citation [1], [2].
    - Example: *"QuantumScape expanded its Cobra heat-treatment line in 2026 [1] to support 40 GWh production [2]."*
    - Combine multiple sources using adjacent brackets (e.g., `[1][2]`).
 
-2. **Sequential Assignment**:
+3. **Sequential Assignment**:
    - Assign numbers sequentially (`[1]`, `[2]`, `[3]...`) in the exact order sources are first introduced in the report text.
    - Reuse the same assigned number if a source is referenced multiple times.
 
-3. **Sources Section Format**:
+4. **Sources Section Format**:
    - Conclude the report with a final section titled: `## Sources`
    - List every source sequentially without gaps in the numbering.
    - Every single source entry MUST follow this EXACT format, including the full `https://` URL:
      `[1] Source Title: https://exact-url-from-findings.com`
      `[2] Source Title: https://exact-url-from-findings.com`
 
-4. **Zero Tolerance For Plain Text Bibliographies**:
+5. **Zero Tolerance For Plain Text Bibliographies**:
    ❌ REJECTED FORMAT (PLAIN TEXT / NO URL):
       1. Nature Energy - Interfacial Mechanics (2026)
       2. QuantumScape Investor Presentation
@@ -449,7 +474,7 @@ CRITICAL MANDATE: CITATIONS ARE NON-NEGOTIABLE. EVERY SINGLE FACT, METRIC, DATE,
       [1] Nature Energy - Interfacial Mechanics: https://www.nature.com/articles/s41560-023-01312-4
       [2] QuantumScape Investor Presentation: https://ir.quantumscape.com/news/default.aspx
 
-5. **Negative Constraints & Source Fidelity**:
+6. **Negative Constraints & Source Fidelity**:
    - DO NOT put citation numbers (e.g., `[1]`) inside Mermaid.js visual diagram blocks (it breaks diagram parsing).
    - Use ONLY real URLs explicitly present in the `<Findings>` section. Never invent or hallucinate URLs or titles.
 </Citation Rules>

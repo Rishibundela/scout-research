@@ -28,9 +28,10 @@ Your task is to condense a large collection of research findings and search note
 
 CRITICAL CONSTRAINTS:
 1. Preserve ALL key numerical data, statistics, dates, percentages, and metrics.
-2. Maintain explicit source URLs and attribution citations intact.
-3. Remove duplicate search results, boilerplate text, and conversational filler.
-4. Structure findings into logical bulleted thematic sections.
+2. ABSOLUTE URL INTEGRITY: Copy every source URL EXACTLY character-for-character as found in the raw text. NEVER drop, truncate, alter, or summarize a `https://...` URL.
+3. DIRECT ATTRIBUTION: Attach the exact raw source URL directly alongside the bullet point finding it supports.
+4. Remove duplicate search results, boilerplate text, and conversational filler.
+5. Structure findings into logical bulleted thematic sections.
 """
 
 
