@@ -212,6 +212,8 @@ class ResearchService:
         on_complete: Optional[CallbackType] = None,
         cancel_event: Optional[threading.Event] = None,
     ) -> None:
+        message_metadata = {}
+        last_text_lengths = {}
         try:
             async for chunk in self.client.stream_run(
                 thread_id=thread_id,
@@ -232,6 +234,41 @@ class ResearchService:
 
                 if event == "updates":
                     await self._handle_updates(data, on_node_stage, on_token, on_interrupt)
+
+                elif event == "messages/metadata":
+                    if isinstance(data, dict):
+                        for msg_id, msg_meta in data.items():
+                            if isinstance(msg_meta, dict) and "metadata" in msg_meta:
+                                node_name = msg_meta["metadata"].get("langgraph_node")
+                                if node_name:
+                                    message_metadata[msg_id] = node_name
+
+                elif event == "messages/partial":
+                    if isinstance(data, list) and data:
+                        msg = data[0]
+                        if isinstance(msg, dict):
+                            msg_id = msg.get("id")
+                            node_name = message_metadata.get(msg_id, "unknown")
+                            content = msg.get("content")
+                            full_text = ""
+                            if isinstance(content, list) and content:
+                                text_parts = []
+                                for part in content:
+                                    if isinstance(part, dict) and "text" in part:
+                                        text_parts.append(part["text"])
+                                    elif isinstance(part, str):
+                                        text_parts.append(part)
+                                full_text = "".join(text_parts)
+                            elif isinstance(content, str):
+                                full_text = content
+
+                            if full_text and msg_id:
+                                last_len = last_text_lengths.get(msg_id, 0)
+                                if len(full_text) > last_len:
+                                    delta = full_text[last_len:]
+                                    last_text_lengths[msg_id] = len(full_text)
+                                    if delta and on_token:
+                                        await self._invoke(on_token, node_name, delta)
 
                 elif event == "messages":
                     await self._handle_messages(data, on_token)
