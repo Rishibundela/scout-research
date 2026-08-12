@@ -65,8 +65,14 @@ _GROUP_KEYWORDS = {
 BUBBLE_GROUPS = {"clarify", "general", "draft_report"}
 
 
-def node_group(node_name: str) -> str:
-    key = (node_name or "").lower()
+EXCLUDED_NODES = {"input_guardrail", "validate_input", "intent_classifier", "guardrail"}
+
+
+def node_group(node_name: str) -> str | None:
+    if not node_name or node_name in EXCLUDED_NODES:
+        return None
+    
+    key = node_name.lower()
     if key.startswith("__error_handler__"):
         return "progress"  # recovery nodes are trace-only, never their own bubble
     for token, group in _GROUP_KEYWORDS.items():
@@ -76,23 +82,22 @@ def node_group(node_name: str) -> str:
 
 
 def _clean_clarify_token(raw_text: str) -> str:
-    """Helper to extract clean message content if tokens belong to JSON schema."""
+    """Extract clean conversational text from structured JSON outputs."""
+    if not raw_text or not raw_text.strip():
+        return ""
+
+    # Search for "verification" or "question" field values
+    matches = list(re.finditer(r'"(?:verification|question)"\s*:\s*"([^"]*)', raw_text))
+    if matches:
+        extracted = matches[-1].group(1)
+        # Unescape double quotes for beautiful rendering in UI
+        return extracted.replace('\\"', '"')
+
+    # Fallback for plain conversational text
     if not raw_text.strip().startswith("{"):
         return raw_text
 
-    # Try parsing complete JSON if available
-    try:
-        data = json.loads(raw_text)
-        return data.get("verification") or data.get("question") or ""
-    except json.JSONDecodeError:
-        pass
-
-    # Find ALL matches and take the last one (which is the active streaming field)
-    matches = list(re.finditer(r'"(?:verification|question)"\s*:\s*"([^"]*)', raw_text))
-    if matches:
-        return matches[-1].group(1)
-
-    return raw_text
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -216,6 +221,7 @@ def _worker_entrypoint(handle: RunHandle, mode: str, kwargs: dict) -> None:
 async def _worker(handle: RunHandle, mode: str, kwargs: dict) -> None:
     service = ResearchService()
     raw_buffers = {}
+    last_node = [None]
 
     def on_node_stage(node_name: str) -> None:
         with handle.lock:
@@ -233,6 +239,12 @@ async def _worker(handle: RunHandle, mode: str, kwargs: dict) -> None:
             group = node_group(node_name)
             if group not in BUBBLE_GROUPS:
                 return
+            
+            # If the node name changed, reset the buffer for this group
+            if last_node[0] != node_name:
+                raw_buffers[group] = ""
+                last_node[0] = node_name
+
             current = handle.segments[-1] if handle.segments else None
             if current is None or current.finalized or current.group != group:
                 _finalize_current_segment(handle)
