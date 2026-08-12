@@ -51,7 +51,7 @@ def sanitize_latex_units(text: str) -> str:
 
     # 3. Strip stray math enclosure dollars around simple text/ranges:
     # e.g., $dew point < -60°C$ -> dew point < -60°C
-    text = re.sub(r'\$([a-zA-Z0-9\s°C<>\-\/_%]+)\$', r'\1', text)
+    text = re.sub(r'\$([a-zA-Z0-9 \t°C<>\-\/_%]+)\$', r'\1', text)
 
     # 4. Clean up exponent scientific notation: 10^{-3} S/cm -> 10⁻³ S/cm
     superscripts = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '-': '⁻'}
@@ -215,8 +215,9 @@ def verify_url_grounding(report_text: str, notes: list) -> tuple[str, int]:
     """
     raw_notes_str = "\n".join(notes) if isinstance(notes, list) else str(notes)
     
-    # Extract raw URLs from notes and canonicalize them
-    raw_urls = re.findall(r'https?://[^\s\)\>\]]+', raw_notes_str)
+    # Extract raw URLs and bare domain paths from notes and canonicalize them
+    domain_path_regex = r'(?:https?://)?([a-zA-Z0-9\-\.]+\.(?:com|org|io|dev|ai|edu|net|gov|cn|us|uk|ca|jp|de|fr)/[^\s\)\>\]]*)'
+    raw_urls = re.findall(domain_path_regex, raw_notes_str)
     normalized_scraped_urls: Set[str] = {
         canonicalize_url(u, keep_scheme=False) for u in raw_urls if canonicalize_url(u, keep_scheme=False)
     }
@@ -335,8 +336,8 @@ def verify_url_grounding(report_text: str, notes: list) -> tuple[str, int]:
 
     # Reconstruct ## Sources section
     new_sources_lines = []
-    heading_match = re.match(r"^(\s*#+\s+(?:Sources|References)\b.*)", split_match.group(1))
-    heading = heading_match.group(1).split("\n")[0] if heading_match else "## Sources"
+    heading_match = re.match(r"^\s*(#+\s+(?:Sources|References)\b.*)", split_match.group(1))
+    heading = heading_match.group(1).split("\n")[0].strip() if heading_match else "## Sources"
     new_sources_lines.append(heading)
     
     patched_count = 0

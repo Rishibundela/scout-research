@@ -77,3 +77,27 @@ def test_token_estimation_heuristics():
     code_heur_est = estimate_token_count(code_block)
     assert code_heur_est >= 10
     assert code_heur_est <= 15
+
+
+def test_verify_url_grounding_scheme_agnostic():
+    """Verify that output grounding correctly resolves URLs with missing schemes or in raw notes."""
+    from agent.src.guardrails.output_guard import verify_url_grounding
+    
+    report = """# Sample Report
+According to [1] and [2], the tech works.
+
+## Sources
+[1] Stanford HELM - https://crfm.stanford.edu/helm/
+[2] OpenCompass - https://opencompass.org.cn/
+"""
+    # notes contains a bare URL, and raw_notes contains a matching URL
+    notes = ["Refer to crfm.stanford.edu/helm/ for HELM benchmarks."]
+    
+    result, count = verify_url_grounding(report, notes)
+    # Both should be grounded successfully (since opencompass is not in notes, [2] is unverified,
+    # but [1] should be grounded because the bare domain matches the canonicalized full URL).
+    sources_section = result.split("## Sources")[1]
+    assert "*(Unverified Source)*" not in sources_section.split("[1]")[1].split("\n")[0]
+    assert "*(Unverified Source)*" in sources_section.split("[2]")[1].split("\n")[0]
+    assert count == 1
+

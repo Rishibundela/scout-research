@@ -99,7 +99,9 @@ async def output_guardrail_node(state: AgentState) -> dict:
         raw_report = extract_text_content(raw_report)
     elif not isinstance(raw_report, str):
         raw_report = str(raw_report)
-    notes = state.get("notes", [])
+    notes = state.get("notes", []) or []
+    raw_notes = state.get("raw_notes", []) or []
+    combined_notes = (notes if isinstance(notes, list) else [str(notes)]) + (raw_notes if isinstance(raw_notes, list) else [str(raw_notes)])
 
     # Step 1: Scrub accidental API keys / secrets
     clean_report = sanitize_secrets_and_pii(raw_report)
@@ -111,7 +113,7 @@ async def output_guardrail_node(state: AgentState) -> dict:
     clean_report = heal_latex_delimiters(clean_report)
 
     # Step 2: Grounding check (detect & flag unverified URLs cleanly via canonicalize_url)
-    clean_report, hallucinated_count = verify_url_grounding(clean_report, notes)
+    clean_report, hallucinated_count = verify_url_grounding(clean_report, combined_notes)
     if hallucinated_count > 0:
         # CLEAN LOGGING: Removed emoji for clean backend logs
         logger.info(f"Output Guardrail flagged and patched {hallucinated_count} unverified citation(s).")
