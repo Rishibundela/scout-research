@@ -44,7 +44,7 @@ graph TD
         F["LangGraphSDKClient"]
     end
 
-    subgraph Agent Core — Docker
+    subgraph "Agent Core — Docker"
         G["Input Guard ⚡"]
         H["Topic Classifier 🏷️"]
         GA["General Assistant 💬"]
