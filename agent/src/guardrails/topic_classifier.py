@@ -18,23 +18,20 @@ classifier_prompt = """You are a high-speed security and scope classifier for an
 
 Analyze the user query and classify it into one of these categories:
 1. 'valid_research': Questions requiring web search, technical analysis, market research, history, science, synthesis, or deep investigation.
-2. 'out_of_scope': Requests for pure code generation (e.g. 'write a quicksort in C'), creative writing (e.g. 'write a poem about cats'), or math execution without research context.
+2. 'general_chitchat': Conversational greetings (e.g. 'hi', 'how are you'), general QA, and out-of-scope requests such as pure code generation (e.g. 'write a quicksort in C') or creative writing (e.g. 'write a poem').
 3. 'harmful_dangerous': Requests involving illegal activities, malware development, physical harm, weapons, dangerous chemical synthesis, or personal harassment.
-4. 'casual_chitchat': Conversational greetings like 'hi', 'how are you', 'who made you'.
 
-Set 'is_safe' to False ONLY if category is 'harmful_dangerous'.
-Set 'is_research_topic' to True ONLY if category is 'valid_research'.
-Provide a concise, polite 'rejection_reason' if the query cannot be processed as a research topic.
+Provide a concise, polite 'rejection_reason' if the query cannot be processed as a research topic (i.e. if it is classified as 'general_chitchat' or 'harmful_dangerous').
 """
 
 primary_classifier_model = init_chat_model(
-    model="google_genai:gemini-3.1-flash-lite",
+    model="google_genai:gemini-3.5-flash-lite",
     temperature=0.0,
     api_key=settings.GOOGLE_API_KEY,
 )
 
 backup_classifier_model = init_chat_model(
-    model="google_genai:gemini-3.5-flash-lite",
+    model="google_genai:gemini-3.1-flash-lite",
     temperature=0.0,
     api_key=settings.GOOGLE_API_KEY,
 )
