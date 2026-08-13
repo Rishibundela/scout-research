@@ -45,3 +45,5 @@ Thumbs.db
 api-1.json
 *.log
 
+# Project Analysis
+project_analysis.md
