@@ -413,11 +413,6 @@ For each section of the report, do the following:
 - MULTI-SOURCE VARIANCES: If multiple retrieved sources report slightly different projections (e.g., 40 GWh vs 45 GWh), express the value as an explicit range (e.g., "40–45 GWh [1][2]") rather than picking an arbitrary rounded estimate.
 </Fact-Locking & Precision Rules>
 
-<Narrative & Technical Depth Directive>
-1. PROSE BRIDGING: Every table and Mermaid diagram MUST be preceded by at least 2 detailed narrative paragraphs explaining the physical, chemical, or financial mechanisms behind the data.
-2. MECHANISTIC EXPLANATION: Do not simply list metrics. Explain *why* a metric was achieved (e.g., instead of just stating "844 Wh/L", explain how the thin ceramic separator suppresses dendrite formation and enables in-situ lithium plating under low stack pressure).
-</Narrative & Technical Depth Directive>
-
 <Visual Diagrams (Mermaid.js)>
 To enhance structural clarity and visualize complex processes, embed inline visual diagrams wherever applicable using valid ```mermaid code blocks:
 - **System Architectures & Process Flows**: Use `graph TD` or `graph LR`.
