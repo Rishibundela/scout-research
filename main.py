@@ -30,6 +30,13 @@ class StartResearchRequest(BaseModel):
 class ResumeResearchRequest(BaseModel):
     answers: Dict[str, Any]
 
+class CreateSessionRequest(BaseModel):
+    user_id: Optional[str] = "default_user"
+    title: Optional[str] = None
+
+class UpdateTitleRequest(BaseModel):
+    title: str
+
 # --- Helper Utilities ---
 
 def format_sse(event: str, data: Any) -> str:
@@ -78,11 +85,11 @@ async def start_research_stream(request: StartResearchRequest):
     async def on_stage(node: str):
         await queue.put(("stage", {"node": node}))
 
-    async def on_token(token: str):
-        await queue.put(("token", {"text": token}))
+    async def on_token(node: str, token: str):
+        await queue.put(("token", {"node": node, "text": token}))
 
-    async def on_interrupt(data: dict):
-        await queue.put(("interrupt", data))
+    async def on_interrupt(data: dict, node: str):
+        await queue.put(("interrupt", {"node": node, "data": data}))
 
     async def on_complete(data: dict):
         await queue.put(("complete", data))
@@ -124,11 +131,11 @@ async def resume_research_stream(thread_id: str, request: ResumeResearchRequest)
     async def on_stage(node: str):
         await queue.put(("stage", {"node": node}))
 
-    async def on_token(token: str):
-        await queue.put(("token", {"text": token}))
+    async def on_token(node: str, token: str):
+        await queue.put(("token", {"node": node, "text": token}))
 
-    async def on_interrupt(data: dict):
-        await queue.put(("interrupt", data))
+    async def on_interrupt(data: dict, node: str):
+        await queue.put(("interrupt", {"node": node, "data": data}))
 
     async def on_complete(data: dict):
         await queue.put(("complete", data))
@@ -137,7 +144,7 @@ async def resume_research_stream(thread_id: str, request: ResumeResearchRequest)
         try:
             await research_service.resume_from_clarification(
                 thread_id=thread_id,
-                clarification_answers=request.answers,
+                resume_value=request.answers,
                 on_node_stage=on_stage,
                 on_token=on_token,
                 on_interrupt=on_interrupt,
@@ -149,6 +156,132 @@ async def resume_research_stream(thread_id: str, request: ResumeResearchRequest)
             await queue.put(("done", {"thread_id": thread_id}))
 
     task = asyncio.create_task(run_resume())
+
+    return StreamingResponse(
+        _stream_queue(queue, task, thread_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/research/session")
+async def create_session(request: CreateSessionRequest):
+    """Initializes a new persistent thread session."""
+    try:
+        thread_id = await research_service.start_session(user_id=request.user_id)
+        if request.title:
+            await research_service.update_session_title(thread_id, request.title)
+        return {"thread_id": thread_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/research/sessions")
+async def list_sessions(user_id: Optional[str] = "default_user", limit: int = 50):
+    """Lists all sessions for a user."""
+    try:
+        sessions = await research_service.list_sessions(user_id=user_id, limit=limit)
+        return {"sessions": sessions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/research/{thread_id}")
+async def delete_session(thread_id: str):
+    """Deletes a session/thread."""
+    try:
+        await research_service.delete_session(thread_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/research/{thread_id}/title")
+async def update_session_title(thread_id: str, request: UpdateTitleRequest):
+    """Updates the title metadata of a thread."""
+    try:
+        await research_service.update_session_title(thread_id, request.title)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/research/{thread_id}/state")
+async def get_session_state(thread_id: str):
+    """Retrieves the raw thread state."""
+    try:
+        state = await research_service.get_state(thread_id)
+        return state
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/research/{thread_id}/history")
+async def get_session_history(thread_id: str):
+    """Retrieves formatted message history."""
+    try:
+        history = await research_service.get_session_history(thread_id)
+        return {"history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/research/{thread_id}/report")
+async def get_session_report(thread_id: str):
+    """Retrieves the finalized research report from the session state."""
+    try:
+        report = await research_service.get_session_report(thread_id)
+        return {"final_report": report}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/research/{thread_id}/cancel")
+async def cancel_run(thread_id: str):
+    """Cancels the active run on a thread."""
+    try:
+        cancelled = await research_service.cancel(thread_id)
+        return {"cancelled": cancelled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/research/{thread_id}/resume-checkpoint")
+async def resume_checkpoint_stream(thread_id: str):
+    """Resumes streaming execution from the last checkpoint."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def on_stage(node: str):
+        await queue.put(("stage", {"node": node}))
+
+    async def on_token(node: str, token: str):
+        await queue.put(("token", {"node": node, "text": token}))
+
+    async def on_interrupt(data: dict, node: str):
+        await queue.put(("interrupt", {"node": node, "data": data}))
+
+    async def on_complete(data: dict):
+        await queue.put(("complete", data))
+
+    async def run_checkpoint():
+        try:
+            await research_service.resume_from_checkpoint(
+                thread_id=thread_id,
+                on_node_stage=on_stage,
+                on_token=on_token,
+                on_interrupt=on_interrupt,
+                on_complete=on_complete,
+            )
+        except Exception as e:
+            await queue.put(("error", {"message": str(e)}))
+        finally:
+            await queue.put(("done", {"thread_id": thread_id}))
+
+    task = asyncio.create_task(run_checkpoint())
 
     return StreamingResponse(
         _stream_queue(queue, task, thread_id),

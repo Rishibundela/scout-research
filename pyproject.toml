@@ -35,6 +35,8 @@ dependencies = [
     "fpdf2>=2.7.9",
     "markdown2>=2.5.5",
     "xhtml2pdf>=0.2.17",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
 ]
 
 [tool.hatch.build.targets.wheel]
