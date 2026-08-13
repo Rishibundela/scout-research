@@ -8,11 +8,40 @@ wheels/
 
 # Virtual environments
 .venv
+.venv*/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Environment variables
 .env
+.env.*
 
+# LangGraph local directories
 .langgraph_api/
 
-# Ignore Streamlit local secrets
+# Streamlit config/secrets
 .streamlit/secrets.toml
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Runtime / Python version managers
+.python-version
+
+# Temporary/debug logs
+api-1.json
+*.log
+
