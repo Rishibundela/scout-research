@@ -10,8 +10,8 @@ mock_sdk_client.threads.search = AsyncMock(return_value=[{"thread_id": "test_thr
 mock_sdk_client.threads.update = AsyncMock(return_value=None)
 mock_sdk_client.runs.cancel = AsyncMock(return_value=True)
 
-with patch("agent_client.get_client", return_value=mock_sdk_client):
-    from main import app, research_service
+with patch("backend.agent_client.get_client", return_value=mock_sdk_client):
+    from backend.main import app, research_service
 
 from fastapi.testclient import TestClient
 

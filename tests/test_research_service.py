@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from research_service import ResearchService
+from backend.research_service import ResearchService
 
 pytestmark = pytest.mark.asyncio
 

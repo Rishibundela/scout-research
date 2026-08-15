@@ -31,8 +31,8 @@ from agent.src.guardrails.output_guard import (
 )
 from agent.src.utils.search import get_tavily_circuit_breaker
 from agent.src.utils.compaction import estimate_token_count
-from research_service import ResearchService
-from agent_client import LangGraphSDKClient
+from backend.research_service import ResearchService
+from backend.agent_client import LangGraphSDKClient
 
 # =====================================================================
 # 1. REGEX INPUT GUARD BENCHMARK

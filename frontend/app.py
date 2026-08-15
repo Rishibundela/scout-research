@@ -22,10 +22,10 @@ from typing import Any, Optional
 import streamlit as st
 
 import uuid
-import agent_runtime
-from config import settings
-from research_service import ResearchService
-from report_utils import build_report_html, export_markdown, export_pdf
+from backend import agent_runtime
+from backend.config import settings
+from backend.research_service import ResearchService
+from frontend.report_utils import build_report_html, export_markdown, export_pdf
 
 
 def get_or_create_user_id() -> str:

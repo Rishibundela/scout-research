@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from agent_client import LangGraphSDKClient
+from backend.agent_client import LangGraphSDKClient
 
 class ThreadRepository:
     """Repository pattern wrapping the LangGraph SDK client for persistence operations."""

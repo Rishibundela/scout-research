@@ -10,7 +10,7 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 from langgraph_sdk import get_client
 
-from config import settings
+from backend.config import settings
 
 
 class LangGraphSDKClient:

@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from research_service import ResearchService
+from backend.research_service import ResearchService
 
 app = FastAPI(title="Research Agent API")
 

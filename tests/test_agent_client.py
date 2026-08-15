@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from agent_client import LangGraphSDKClient
+from backend.agent_client import LangGraphSDKClient
 
 # Mark all async tests automatically
 pytestmark = pytest.mark.asyncio
@@ -38,7 +38,7 @@ def mock_sdk_client():
 
 async def test_create_thread_success(mock_sdk_client):
     """Verify thread creation sends correct metadata and returns response."""
-    with patch("agent_client.get_client", return_value=mock_sdk_client):
+    with patch("backend.agent_client.get_client", return_value=mock_sdk_client):
         wrapper = LangGraphSDKClient(url="http://fake-url", api_key="fake-key")
         
         result = await wrapper.create_thread(metadata={"user_id": "unit_tester"})
@@ -51,7 +51,7 @@ async def test_create_thread_success(mock_sdk_client):
 
 async def test_get_thread_state_success(mock_sdk_client):
     """Verify thread state retrieval."""
-    with patch("agent_client.get_client", return_value=mock_sdk_client):
+    with patch("backend.agent_client.get_client", return_value=mock_sdk_client):
         wrapper = LangGraphSDKClient(url="http://fake-url", api_key="fake-key")
         
         state = await wrapper.get_thread_state("test_thread_123")
@@ -62,7 +62,7 @@ async def test_get_thread_state_success(mock_sdk_client):
 
 async def test_stream_run_yielding(mock_sdk_client):
     """Verify stream_run yields streamed chunks correctly."""
-    with patch("agent_client.get_client", return_value=mock_sdk_client):
+    with patch("backend.agent_client.get_client", return_value=mock_sdk_client):
         wrapper = LangGraphSDKClient(url="http://fake-url", api_key="fake-key")
         
         chunks = []

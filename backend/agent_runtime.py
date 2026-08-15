@@ -45,7 +45,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from research_service import ResearchService, RunCancelled
+from backend.research_service import ResearchService, RunCancelled
 
 logger = logging.getLogger(__name__)
 

@@ -40,4 +40,4 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["agent","agent_client"]
+packages = ["agent", "backend", "frontend"]

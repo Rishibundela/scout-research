@@ -31,8 +31,8 @@ import logging
 import threading
 from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
-from agent_client import LangGraphSDKClient
-from config import settings
+from backend.agent_client import LangGraphSDKClient
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class ResearchService:
         return await self.client.get_thread_state(thread_id)
 
     async def list_sessions(self, user_id: str, limit: int = 50) -> list[Dict[str, Any]]:
-        from repository import ThreadRepository
+        from backend.repository import ThreadRepository
         repo = ThreadRepository(self.client)
         return await repo.list_sessions(user_id, limit=limit)
 
