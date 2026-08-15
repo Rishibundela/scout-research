@@ -173,23 +173,31 @@ Without compaction, a 6-iteration supervisor run with 3 workers could burn 100K+
 
 ```
 scout-research/
-├── app.py                      # Streamlit chat UI
-├── main.py                     # FastAPI REST + SSE API (11 endpoints)
-├── config.py                   # Centralized settings
-├── research_service.py         # Business logic controller
-├── agent_runtime.py            # Background execution engine
-├── agent_client.py             # LangGraph SDK wrapper
-├── repository.py               # Database access layer
-├── report_utils.py             # HTML/PDF/Markdown export engine
+├── docs/                           # Documentation hub
+│   ├── decisions.md                # Architectural Decision Records (ADRs)
+│   ├── project_analysis.md         # Project analysis
+│   └── PERFORMANCE_AND_NFRS.md     # Benchmarks & NFRs
 │
-├── agent/                      # Agent core (runs in Docker)
-│   ├── langgraph.json          # Graph route configuration
+├── backend/                        # Backend REST & SSE Layer (FastAPI)
+│   ├── main.py                     # FastAPI app entry point & endpoints
+│   ├── research_service.py         # Business logic layer
+│   ├── agent_runtime.py            # Background thread & event loop runtime
+│   ├── agent_client.py             # LangGraph SDK client wrapper
+│   ├── repository.py               # Database / Supabase access layer
+│   └── config.py                   # API configuration settings
+│
+├── frontend/                       # UI Presentation Layer (Streamlit)
+│   ├── app.py                      # Streamlit dashboard chat interface
+│   └── report_utils.py             # PDF / HTML / Markdown export engine
+│
+├── agent/                          # Agent core (runs in Docker)
+│   ├── langgraph.json              # Graph route configuration
 │   ├── DOCKERFILE
 │   └── src/
-│       ├── graph.py            # Main orchestrator graph
-│       ├── state.py            # State schemas + dedup reducer
-│       ├── schemas.py          # Pydantic structured outputs
-│       ├── prompts.py          # Prompt templates
+│       ├── graph.py                # Main orchestrator graph
+│       ├── state.py                # State schemas + dedup reducer
+│       ├── schemas.py              # Pydantic structured outputs
+│       ├── prompts.py              # Prompt templates
 │       ├── subgraphs/
 │       │   ├── scoping_graph.py    # Clarification & brief
 │       │   ├── supervisor.py       # Multi-agent supervisor
@@ -203,16 +211,16 @@ scout-research/
 │           ├── search.py           # Tavily + circuit breakers
 │           └── helper.py           # Utilities
 │
-├── tests/                      # Automated test suite
-│   ├── test_agent_client.py    # SDK client unit tests
-│   ├── test_fixes.py           # Regression tests
-│   ├── test_main_api.py        # FastAPI endpoint tests
+├── tests/                          # Automated test suite
+│   ├── test_agent_client.py        # SDK client unit tests
+│   ├── test_fixes.py               # Regression tests
+│   ├── test_main_api.py            # FastAPI endpoint tests
 │   └── test_research_service.py
 │
-├── notebooks/                  # Jupyter prototyping (6 notebooks)
-├── docker-compose.yml          # PostgreSQL + Redis + LangGraph API
-├── pyproject.toml              # Dependencies & build config
-└── decisions.md                # Architectural Decision Records
+├── notebooks/                      # Jupyter prototyping (6 notebooks)
+├── docker-compose.yml              # PostgreSQL + Redis + LangGraph API
+├── pyproject.toml                  # Dependencies & build config
+└── README.md                       # Root Landing Page
 ```
 
 ---
@@ -287,14 +295,14 @@ This launches:
 
 **Streamlit UI:**
 ```bash
-uv pip install -r pyproject.toml
-streamlit run app.py
+uv pip install -e .
+streamlit run frontend/app.py
 ```
 Open `http://localhost:8501`
 
 **FastAPI Server:**
 ```bash
-uvicorn main:app --reload
+uvicorn backend.main:app --reload
 ```
 Open `http://localhost:8000/docs` for the interactive API docs.
 
@@ -335,7 +343,7 @@ Every graph node has: **3 retries** with exponential backoff, **180s timeout**, 
 
 ## Architectural Decisions
 
-See **[decisions.md](decisions.md)** for the complete Architectural Decision Record covering:
+See **[decisions.md](docs/decisions.md)** for the complete Architectural Decision Record covering:
 
 - Why LangGraph over CrewAI/AutoGen
 - Why daemon threads instead of asyncio in Streamlit's main thread
